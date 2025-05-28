@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AI Math Tutor",
+  "version": "1.0.0",
+  "description": "Select math problems and get AI-powered solutions with explanations",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.openai.com/*"
+  ],
+  "action": {
+    "default_title": "AI Math Tutor - Click to open"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js"
+  }
+}

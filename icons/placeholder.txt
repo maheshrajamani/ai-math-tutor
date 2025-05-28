@@ -1,0 +1,18 @@
+Icon placeholder files - Replace with actual 16x16, 48x48, and 128x128 PNG icons
+
+For the AI Math Tutor extension, consider using:
+- Calculator or math symbols (∑, ∫, π, √)
+- Brain icon with mathematical elements
+- Graduation cap with equations
+- Robot/AI icon with math symbols
+
+Recommended tools for creating icons:
+- Canva (free templates)
+- Figma (design from scratch)
+- Icon8 (icon library)
+- GIMP (free image editor)
+
+Files needed:
+- icon16.png (16x16 pixels)
+- icon48.png (48x48 pixels)  
+- icon128.png (128x128 pixels)
