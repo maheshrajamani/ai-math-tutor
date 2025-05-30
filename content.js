@@ -175,18 +175,15 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
   }
 
   isPDFPage() {
-    // Check various indicators that this might be a PDF
+    // Be very specific about PDF detection - only detect actual PDFs
     return document.location.href.includes('.pdf') ||
            document.querySelector('embed[type="application/pdf"]') ||
            document.querySelector('object[type="application/pdf"]') ||
-           document.querySelector('iframe[src*=".pdf"]') ||
            document.contentType === 'application/pdf' ||
-           document.title.includes('.pdf') ||
-           // Chrome's built-in PDF viewer
-           (window.location.href.startsWith('chrome-extension://') && window.location.href.includes('.pdf')) ||
-           // Check if the page has PDF viewer elements
-           document.querySelector('pdf-viewer') ||
-           document.querySelector('#viewer') ||
+           // Chrome's built-in PDF viewer (very specific)
+           (window.location.href.startsWith('chrome-extension://') && 
+            window.location.href.includes('.pdf') &&
+            document.querySelector('pdf-viewer')) ||
            // Check document type
            document.documentElement.getAttribute('data-content-type') === 'application/pdf';
   }

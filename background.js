@@ -323,46 +323,10 @@ class MathTutorBackground {
             quality: 100
           });
           
-          // Enhanced validation
-          if (dataUrl && dataUrl.length > 5000) { // Increased minimum size
-            // Quick image dimension check by creating an image
-            const validImage = await new Promise((resolve) => {
-              const img = new Image();
-              img.onload = () => {
-                console.log('Captured image dimensions:', img.width, 'x', img.height);
-                
-                // Validate dimensions are reasonable
-                if (viewportDimensions) {
-                  const expectedWidth = viewportDimensions.viewportWidth * viewportDimensions.devicePixelRatio;
-                  const expectedHeight = viewportDimensions.viewportHeight * viewportDimensions.devicePixelRatio;
-                  const widthRatio = img.width / expectedWidth;
-                  const heightRatio = img.height / expectedHeight;
-                  
-                  console.log('Expected dimensions:', expectedWidth, 'x', expectedHeight);
-                  console.log('Size ratios:', { width: widthRatio, height: heightRatio });
-                  
-                  // Allow some tolerance but ensure we got a reasonable capture
-                  if (widthRatio > 0.8 && heightRatio > 0.8 && widthRatio < 1.2 && heightRatio < 1.2) {
-                    resolve(true);
-                  } else {
-                    console.log('Image dimensions don\'t match expected viewport size');
-                    resolve(false);
-                  }
-                } else {
-                  // If we can't check dimensions, just ensure it's a reasonable size
-                  resolve(img.width > 300 && img.height > 300);
-                }
-              };
-              img.onerror = () => resolve(false);
-              img.src = dataUrl;
-            });
-            
-            if (validImage) {
-              console.log('Screenshot captured and validated successfully on attempt', retryCount + 1);
-              break;
-            } else {
-              throw new Error('Captured image dimensions don\'t match expected viewport');
-            }
+          // Basic validation - just check if we got data
+          if (dataUrl && dataUrl.length > 5000) {
+            console.log('Screenshot captured successfully on attempt', retryCount + 1, 'Data size:', dataUrl.length);
+            break;
           } else {
             throw new Error('Captured image appears to be invalid or too small');
           }

@@ -4,12 +4,13 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 
 ## ✨ Features
 
-- **📐 Select Math Problems**: Click and drag to select any math problem from web pages
-- **📷 Upload Screenshots**: Upload images of math problems from textbooks, PDFs, or screenshots  
+- **📐 Universal Problem Selection**: Works on any website, document, or application
+- **🔍 Smart Detection**: Automatically tries direct selection, falls back to screen capture when needed
 - **🤖 AI-Powered Solutions**: Get step-by-step solutions using OpenAI's GPT models
 - **🎯 Smart Model Selection**: Automatically chooses the best AI model based on problem type
 - **📋 Multiple Choice Support**: Handles both multiple choice and open-ended questions
-- **📄 PDF Support**: Native PDF selection with smart text extraction and screenshot capture
+- **📄 Document Support**: Works seamlessly with PDFs, Google Docs, Office 365, and more
+- **📸 Screen Capture**: Built-in screen capture for restricted content and applications
 - **⚙️ Customizable Settings**: Choose your preferred AI model and behavior
 
 ## 🚀 Quick Setup
@@ -35,25 +36,38 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 
 ## 📖 How to Use
 
-### For Web Pages:
-1. Click the extension icon to open the AI Math Tutor panel
-2. Click **📐 Select Math Problem**
-3. Click and drag to select the math problem on the page
-4. Get instant AI-powered solutions!
+### Universal Workflow (Works Everywhere!):
+1. **Open any content** - website, PDF, Google Doc, Word document, etc.
+2. **Click the extension icon** to open the AI Math Tutor panel
+3. **Click** **📐 Select Math Problem**
+4. The extension will automatically:
+   - ✅ **Try direct selection** (click and drag) if possible
+   - 📸 **Fall back to screen capture** if direct selection doesn't work
+5. **Select the problem area** and get instant AI-powered solutions!
 
-### For PDFs:
-1. Open any PDF file in Chrome
-2. Click the extension icon to open the AI Math Tutor panel
-3. Click **📐 Select Math Problem** 
-4. Click and drag to select the problem area in the PDF
-5. The extension will extract text and capture a screenshot automatically
-6. Get step-by-step solutions optimized for PDF content!
+### Supported Content Types:
+- **📄 PDFs** - Automatic text extraction + screenshot capture
+- **📋 Google Docs/Sheets/Slides** - Screen capture with selection interface  
+- **💼 Office 365 Documents** - Screen capture with selection interface
+- **🌐 Regular Websites** - Direct selection with click and drag
+- **🖥️ Desktop Applications** - Screen capture mode
+- **📱 Any Visual Content** - Universal screen capture support
 
-### For Images and Screenshots:
-1. Open the AI Math Tutor panel
-2. Click **📷 Upload Screenshot**
-3. Upload an image of the math problem
-4. Get step-by-step solutions with explanations!
+## 🎯 Key Advantages
+
+### ✅ **Works Everywhere**
+No more guessing which mode to use - the extension automatically handles any content type.
+
+### ✅ **One-Click Operation** 
+Simply click **📐 Select Math Problem** and the extension does the rest.
+
+### ✅ **Intelligent Fallback**
+- Tries direct selection first (faster, more accurate)
+- Automatically falls back to screen capture when needed
+- No manual mode switching required
+
+### ✅ **Zero Configuration**
+Works out of the box with Google Docs, PDFs, Office documents, and regular websites.
 
 ## 🛠️ Development
 
@@ -186,14 +200,14 @@ Edit `config.js` to modify:
 - Test the connection in Settings
 
 **Selection not working**
-- Try refreshing the page and selecting again
-- For PDFs, use the Upload Screenshot feature instead
-- Ensure you're selecting text-based content
+- The extension automatically falls back to screen capture if direct selection fails
+- If screen capture doesn't appear, try refreshing the page and clicking Select Problem again
+- Check browser console (F12 → Console) for any error messages
 
 **No solution appears**
 - Check that the side panel opened automatically
 - Verify your internet connection
-- Try uploading a screenshot if selection fails
+- Ensure you completed the selection process (clicked "Solve Selected Area")
 
 ## 🤝 Support
 

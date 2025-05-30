@@ -45,47 +45,26 @@ class MathTutorSidePanel {
         try {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           
-          // Check for PDF files first
-          const isPDF = tab.url.endsWith('.pdf') || 
-                       tab.url.includes('.pdf') || 
-                       tab.title.includes('.pdf') ||
-                       (tab.url.startsWith('chrome-extension://') && tab.url.includes('.pdf'));
+          // Always try direct selection first - let it fail gracefully if needed
+          this.showStatus('🔍 Trying direct selection...', 'info');
           
-          // Check if this is Chrome's built-in PDF viewer
-          const isChromeBuiltinPDF = tab.url.startsWith('chrome-extension://') && 
-                                    (tab.url.includes('mhjfbmdgcfjbbpaeojofohoefgiehjai') || 
-                                     tab.url.includes('.pdf'));
-          
-          if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
-            alert('Cannot select problems on this page. Try a regular webpage.');
-            return;
-          } else if (tab.url.startsWith('chrome-extension://') && !isPDF && !isChromeBuiltinPDF) {
-            alert('Cannot select problems on extension pages. Try a regular webpage.');
-            return;
-          }
-          
-          // For PDFs, use automatic screenshot mode since direct selection may not work reliably
-          if (isPDF || isChromeBuiltinPDF) {
-            this.showStatus('📄 PDF detected! Using automatic screenshot mode for best results...', 'info');
-            this.initPDFAutomaticScreenshot(tab.id);
-            return;
-          }
-
-          // Inject content script for non-PDF pages
           try {
+            // Try to inject content script
             await chrome.scripting.executeScript({
               target: { tabId: tab.id },
               files: ['content.js']
             });
-          } catch (injectionError) {
-            console.error('Script injection failed:', injectionError);
-            alert('Script injection failed. Try refreshing the page.');
-            return;
+            
+            // Try to enable selection mode
+            await chrome.tabs.sendMessage(tab.id, { type: 'ENABLE_SELECTION' });
+            this.showStatus('✅ Direct selection enabled! Click and drag to select a math problem.', 'success');
+            
+          } catch (error) {
+            console.log('Direct selection failed, falling back to screen capture:', error.message);
+            this.showStatus('📸 Direct selection not available - using screen capture mode...', 'info');
+            // Automatic fallback to screen capture for any failures
+            this.initAutomaticScreenshot(tab.id);
           }
-          
-          // Enable selection mode
-          await chrome.tabs.sendMessage(tab.id, { type: 'ENABLE_SELECTION' });
-          this.showStatus('Selection mode enabled! Click and drag to select a math problem.', 'success');
           
         } catch (error) {
           console.error('Error enabling selection:', error);
@@ -94,59 +73,6 @@ class MathTutorSidePanel {
       });
     }
 
-    // Upload Image button
-    const uploadImageBtn = document.getElementById('uploadImageBtn');
-    const imageInput = document.getElementById('imageInput');
-    
-    if (uploadImageBtn && imageInput) {
-      uploadImageBtn.addEventListener('click', () => {
-        imageInput.click();
-      });
-
-      imageInput.addEventListener('change', async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-          this.showStatus('Please select an image file.', 'error');
-          return;
-        }
-
-        try {
-          this.showStatus('Processing image...', 'info');
-          
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            const imageData = e.target.result;
-            
-            try {
-              // Send to background script for processing
-              await chrome.runtime.sendMessage({
-                type: 'PROCESS_MATH_PROBLEM',
-                imageData: imageData,
-                selectedText: `Math problem from uploaded image: ${file.name}`
-              });
-              
-              this.showStatus('Image uploaded! Processing...', 'success');
-              
-            } catch (error) {
-              console.error('Error processing uploaded image:', error);
-              this.showStatus('Error processing image. Please try again.', 'error');
-            }
-          };
-          
-          reader.onerror = () => {
-            this.showStatus('Error reading image file.', 'error');
-          };
-          
-          reader.readAsDataURL(file);
-          
-        } catch (error) {
-          console.error('Error handling image upload:', error);
-          this.showStatus('Error uploading image.', 'error');
-        }
-      });
-    }
   }
 
   setupRefreshButton() {
@@ -1270,7 +1196,7 @@ Explanation: ${solution.explanation}`;
     }
   }
 
-  async initPDFAutomaticScreenshot(tabId) {
+  async initAutomaticScreenshot(tabId) {
     
     try {
       // Show processing state
@@ -1279,73 +1205,30 @@ Explanation: ${solution.explanation}`;
         <div class="empty-state">
           <div class="loading">
             <div class="spinner"></div>
-            <h3>📄 Setting up PDF selection...</h3>
-            <p>Preparing smart selection tool for PDF pages.</p>
+            <h3>📸 Setting up screen capture...</h3>
+            <p>Preparing automatic screenshot capture mode.</p>
           </div>
         </div>
       `;
       
-      this.showStatus('📄 Setting up PDF selection mode...', 'info');
+      this.showStatus('📸 Setting up screen capture mode...', 'info');
       
-      // For PDFs, try to inject content script first for better selection
-      try {
-        console.log('Attempting to inject content script for PDF...');
-        await chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          files: ['content.js']
-        });
-        
-        console.log('Content script injected, enabling selection...');
-        // Try to enable selection mode on the PDF
-        const response = await chrome.tabs.sendMessage(tabId, { type: 'ENABLE_SELECTION' });
-        console.log('Selection mode response:', response);
-        
-        // Wait a moment to see if it works
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Show success state
-        content.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-state-icon">📄</div>
-            <h2>PDF Selection Mode Active!</h2>
-            <p>Click and drag on the PDF to select the math problem area.</p>
-            <p style="color: #34a853;">✅ Smart text extraction enabled for PDFs</p>
-            <div style="margin-top: 20px;">
-              <button class="btn btn-secondary" onclick="mathTutorPanel.initPDFScreenshotMode(${tabId})">
-                📷 Use Screenshot Mode Instead
-              </button>
-            </div>
-          </div>
-        `;
-        
-        this.showStatus('✅ PDF selection mode ready! Click and drag on the PDF to select the problem.', 'success');
-        return;
-        
-      } catch (selectionError) {
-        console.log('PDF direct selection failed:', selectionError);
-        console.log('Error details:', selectionError.message);
-      }
-      
-      // If direct selection fails, try screenshot capture methods
+      // Go directly to screenshot capture since direct selection already failed
+      console.log('🔍 Attempting automatic screenshot capture...');
       await this.tryScreenshotCapture(tabId);
+      console.log('✅ Automatic screenshot capture completed successfully');
       
     } catch (error) {
-      console.error('PDF automatic methods failed:', error);
+      console.error('Automatic screenshot capture failed:', error);
+      console.log('Falling back to manual screen capture mode...');
       
-      // Show more detailed error message based on error type
-      let errorMsg = 'Chrome restricts PDF operations';
-      if (error.message.includes('screenshot')) {
-        errorMsg = 'PDF screenshot blocked by browser';
-      } else if (error.message.includes('injection')) {
-        errorMsg = 'PDF script injection blocked';
-      }
+      // Show screen capture mode regardless of the error
+      this.showStatus('📸 Automatic capture failed - using manual screen capture mode...', 'info');
       
-      this.showStatus(`${errorMsg}. Using manual upload mode.`, 'error');
-      
-      // Add delay before showing manual mode to ensure user sees the error
+      // Add a small delay before showing manual mode
       setTimeout(() => {
-        this.initPDFScreenshotMode(tabId);
-      }, 1500);
+        this.tryScreenCaptureAPI();
+      }, 500);
     }
   }
 
@@ -1371,9 +1254,6 @@ Explanation: ${solution.explanation}`;
           <button class="btn btn-secondary" id="retakeScreenshotBtn">
             🔄 Retake Screenshot
           </button>
-          <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">
-            📷 Upload Different Image
-          </button>
         </div>
       </div>
     `;
@@ -1396,7 +1276,7 @@ Explanation: ${solution.explanation}`;
     // Retake screenshot
     retakeBtn.addEventListener('click', async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      this.initPDFAutomaticScreenshot(tab.id);
+      this.initAutomaticScreenshot(tab.id);
     });
   }
 
@@ -2210,7 +2090,7 @@ Explanation: ${solution.explanation}`;
     // Retake screenshot
     retakeBtn.addEventListener('click', async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      this.initPDFAutomaticScreenshot(tab.id);
+      this.initAutomaticScreenshot(tab.id);
     });
   }
 
@@ -2233,9 +2113,12 @@ Explanation: ${solution.explanation}`;
       
       if (screenshotData && screenshotData.success && screenshotData.imageData) {
         // Success! Show screenshot selection interface
+        console.log('✅ Screenshot captured successfully, showing selection interface...');
         this.showPDFScreenshotSelection(screenshotData.imageData);
         this.showStatus('✅ Screenshot captured! Click and drag to select the math problem area.', 'success');
         return;
+      } else {
+        console.log('❌ Screenshot capture failed or returned invalid data:', screenshotData);
       }
       
       // Method 2: Try Screen Capture API (if available)
@@ -2263,8 +2146,8 @@ Explanation: ${solution.explanation}`;
       content.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📱</div>
-          <h2>Screen Capture Mode</h2>
-          <p style="margin-bottom: 20px;">For PDFs and restricted pages, screen capture is required to access the content:</p>
+          <h2>Smart Capture Mode</h2>
+          <p style="margin-bottom: 20px;">For PDFs, Google Docs, and other restricted content, screen capture provides reliable access:</p>
           
           <button 
             id="screenCaptureBtn" 
@@ -2277,7 +2160,7 @@ Explanation: ${solution.explanation}`;
           <div style="margin-top: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; color: #1976d2;">
             <strong>📋 Instructions:</strong><br>
             1. Click "Capture Screen"<br>
-            2. Select the browser tab with your PDF or document<br>
+            2. Select the browser tab with your content<br>
             3. You'll get a large selection window to choose the problem area
           </div>
         </div>
@@ -2382,15 +2265,15 @@ Explanation: ${solution.explanation}`;
           <button 
             id="pdfUploadBtn" 
             class="btn btn-primary" 
-            style="width: 100%; padding: 12px; font-size: 16px; background: linear-gradient(135deg, #34a853, #137333);"
-            onclick="document.getElementById('imageInput').click()"
+            style="width: 100%; padding: 12px; font-size: 16px; background: linear-gradient(135deg, #ea4335, #d93025);"
+            onclick="alert('Upload feature removed. Use screen capture instead by clicking the 📐 Select Problem button.')"
           >
-            📷 Upload Screenshot
+            🚫 Upload Removed - Use Screen Capture
           </button>
         </div>
         
         <div style="margin-top: 20px;">
-          <button class="btn btn-secondary" onclick="mathTutorPanel.initPDFAutomaticScreenshot(${tabId})">
+          <button class="btn btn-secondary" onclick="mathTutorPanel.initAutomaticScreenshot(${tabId})">
             🔄 Try Automatic Mode Again
           </button>
           <button class="btn btn-secondary" onclick="mathTutorPanel.newProblem()">
