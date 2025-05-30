@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Math Tutor - Settings</title>
+  <style>
+    body {
+      margin: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f8f9fa;
+      min-width: 600px;
+    }
+    
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .header h1 {
+      color: #4285f4;
+      margin: 0 0 10px 0;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4285f4;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+    }
+    
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-right: 10px;
+      margin-top: 10px;
+    }
+    
+    .btn-primary {
+      background: #4285f4;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #1a73e8;
+    }
+    
+    .btn-secondary {
+      background: #f8f9fa;
+      color: #5f6368;
+      border: 1px solid #dadce0;
+    }
+    
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-align: center;
+    }
+    
+    .status-success {
+      background: #e8f5e8;
+      color: #137333;
+      border: 2px solid #34a853;
+    }
+    
+    .status-error {
+      background: #fce8e6;
+      color: #d93025;
+      border: 2px solid #ea4335;
+    }
+    
+    .status-info {
+      background: #e8f0fe;
+      color: #1a73e8;
+      border: 2px solid #4285f4;
+    }
+    
+    .help-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    
+    .test-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🧮 AI Math Tutor Settings</h1>
+      <p>Configure your AI provider and preferences</p>
+    </div>
+    
+    <div id="statusDisplay" class="status status-info">
+      Extension Status: Checking...
+    </div>
+    
+    <div class="form-group">
+      <label for="apiKey">OpenAI API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-...">
+      <div class="help-text">
+        Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label for="provider">AI Provider</label>
+      <select id="provider">
+        <option value="openai">OpenAI (GPT-4 Vision)</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="useVision">Model Type</label>
+      <select id="useVision">
+        <option value="auto">Auto (Smart model selection)</option>
+        <option value="vision">Always use Vision Model (GPT-4V - for diagrams)</option>
+        <option value="gpt4o">Always use GPT-4o (Latest model with vision)</option>
+        <option value="text">Always use Text Model (GPT-4 - standard)</option>
+        <option value="mini">Always use Mini Model (GPT-4o-mini - fast & cheap)</option>
+      </select>
+      <div class="help-text">
+        <strong>GPT-4o-mini</strong>: Excellent for math, very fast, ~10x cheaper<br>
+        <strong>GPT-4o</strong>: Latest model with vision, best performance<br>
+        <strong>GPT-4V Vision</strong>: Can see images/diagrams, more expensive<br>
+        <strong>GPT-4 Text</strong>: Standard model, good balance<br>
+        <strong>Auto</strong>: Chooses best model based on problem type
+      </div>
+    </div>
+    
+    <div>
+      <button class="btn btn-primary" id="saveBtn">💾 Save API Key</button>
+      <button class="btn btn-secondary" id="testBtn">🔍 Test Connection</button>
+      <button class="btn btn-secondary" id="clearBtn">🗑️ Clear Settings</button>
+    </div>
+    
+    <div class="test-section">
+      <h3>🔧 Diagnostic Tests</h3>
+      <button class="btn btn-secondary" id="testStorageBtn">Test Storage API</button>
+      <button class="btn btn-secondary" id="testExtensionBtn">Test Extension Context</button>
+      <div id="diagnosticResults" style="margin-top: 10px; font-family: monospace; font-size: 12px;"></div>
+    </div>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>
