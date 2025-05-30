@@ -9,7 +9,7 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 - **🤖 AI-Powered Solutions**: Get step-by-step solutions using OpenAI's GPT models
 - **🎯 Smart Model Selection**: Automatically chooses the best AI model based on problem type
 - **📋 Multiple Choice Support**: Handles both multiple choice and open-ended questions
-- **📄 PDF Support**: Works with PDFs through screenshot upload workflow
+- **📄 PDF Support**: Native PDF selection with smart text extraction and screenshot capture
 - **⚙️ Customizable Settings**: Choose your preferred AI model and behavior
 
 ## 🚀 Quick Setup
@@ -41,7 +41,15 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 3. Click and drag to select the math problem on the page
 4. Get instant AI-powered solutions!
 
-### For PDFs and Images:
+### For PDFs:
+1. Open any PDF file in Chrome
+2. Click the extension icon to open the AI Math Tutor panel
+3. Click **📐 Select Math Problem** 
+4. Click and drag to select the problem area in the PDF
+5. The extension will extract text and capture a screenshot automatically
+6. Get step-by-step solutions optimized for PDF content!
+
+### For Images and Screenshots:
 1. Open the AI Math Tutor panel
 2. Click **📷 Upload Screenshot**
 3. Upload an image of the math problem
@@ -137,9 +145,22 @@ Edit `config.js` to modify:
 
 ## 💰 Cost Information
 
+**Problem Solving (approximate costs based on tokens used):**
 - **GPT-4o-mini**: ~$0.0001 per problem (very affordable)
 - **GPT-4o**: ~$0.001 per problem (for complex diagrams)
-- **$5 credit**: Handles thousands of math problems
+- **GPT-4 Vision**: ~$0.001 per problem (image analysis)
+
+**Audio Explanation (optional):**
+- **OpenAI TTS**: ~$0.0075 per explanation (~500 characters average)
+
+**Total per problem:**
+- **Text-only**: $0.0001 (GPT-4o-mini)
+- **With images**: $0.001 (GPT-4o) 
+- **With audio**: +$0.0075 (TTS narration)
+
+**$5 credit**: Handles 6,000+ problems with audio or 50,000+ text-only problems
+
+*Note: Costs are approximate and vary based on problem complexity and token usage*
 - **Auto mode**: Smartly chooses the most cost-effective model
 
 ## 🛠️ Settings

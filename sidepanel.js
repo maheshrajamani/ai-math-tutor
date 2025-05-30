@@ -56,31 +56,31 @@ class MathTutorSidePanel {
                                     (tab.url.includes('mhjfbmdgcfjbbpaeojofohoefgiehjai') || 
                                      tab.url.includes('.pdf'));
           
-          if (isChromeBuiltinPDF) {
-            alert('📄 PDF detected! PDFs cannot be selected directly in Chrome.\n\nPlease:\n1. Take a snapshot (Cmd+Shift+4 on Mac, Ctrl+Shift+S on Windows)\n2. Use "📷 Upload Screenshot" button instead');
-            return;
-          } else if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+          if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
             alert('Cannot select problems on this page. Try a regular webpage.');
             return;
-          } else if (tab.url.startsWith('chrome-extension://')) {
+          } else if (tab.url.startsWith('chrome-extension://') && !isPDF && !isChromeBuiltinPDF) {
             alert('Cannot select problems on extension pages. Try a regular webpage.');
             return;
           }
           
-          // Inject content script
+          // For PDFs, use automatic screenshot mode since direct selection may not work reliably
+          if (isPDF || isChromeBuiltinPDF) {
+            this.showStatus('📄 PDF detected! Using automatic screenshot mode for best results...', 'info');
+            this.initPDFAutomaticScreenshot(tab.id);
+            return;
+          }
+
+          // Inject content script for non-PDF pages
           try {
             await chrome.scripting.executeScript({
               target: { tabId: tab.id },
               files: ['content.js']
             });
           } catch (injectionError) {
-            if (isPDF) {
-              alert('📄 PDF detected! Take a snapshot and use "📷 Upload Screenshot" button instead.');
-              return;
-            } else {
-              alert('Script injection failed. Try refreshing the page.');
-              return;
-            }
+            console.error('Script injection failed:', injectionError);
+            alert('Script injection failed. Try refreshing the page.');
+            return;
           }
           
           // Enable selection mode
@@ -248,6 +248,46 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
         console.log('Received PROBLEM_SOLVED message:', request.solution);
         // Force reload from storage instead of just updating
         this.forceReloadProblem();
+      }
+    });
+    
+    // Listen for messages from popup windows via localStorage
+    window.addEventListener('storage', async (event) => {
+      console.log('🔍 Storage event detected:', { key: event.key, newValue: event.newValue, oldValue: event.oldValue });
+      
+      if (event.key === 'popup_message_trigger' && event.newValue) {
+        console.log('📨 Received localStorage message trigger:', event.newValue);
+        await this.processPopupMessage(event.newValue);
+      }
+    });
+    
+    // Backup polling method in case storage events don't work
+    setInterval(() => {
+      this.checkForPopupMessages();
+    }, 500);
+    
+    // Keep the original postMessage listener as fallback
+    window.addEventListener('message', async (event) => {
+      console.log('📨 Side panel received postMessage from origin:', event.origin);
+      console.log('📨 Message data:', event.data);
+      
+      if (event.data && event.data.type === 'PROCESS_MATH_PROBLEM_FROM_POPUP') {
+        console.log('✅ Processing math problem from popup window via postMessage');
+        console.log('Image data length:', event.data.imageData ? event.data.imageData.length : 'no image');
+        
+        try {
+          console.log('📤 Sending to background script...');
+          const response = await chrome.runtime.sendMessage({
+            type: 'PROCESS_MATH_PROBLEM',
+            imageData: event.data.imageData,
+            selectedText: event.data.selectedText
+          });
+          console.log('✅ Background processing response:', response);
+          this.showStatus('✅ Processing your selected math problem...', 'success');
+        } catch (error) {
+          console.error('❌ Error processing message from popup:', error);
+          this.showStatus('Error processing selection. Please try again.', 'error');
+        }
       }
     });
   }
@@ -814,9 +854,7 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
     const solution = problem.solution;
 
     // Create a detailed script that explains the reasoning
-    let script = `Hello! Let me walk you through this ${solution.type || 'math'} problem step by step, explaining not just what to do, but why we do each step.\n\n`;
-    
-    script += `Here's how we approach this systematically:\n\n`;
+    let script = `Hello! Let me walk you through this ${solution.type || 'math'} problem.\n\n`;
 
     // Add detailed explanation for each step
     solution.steps.forEach((step, index) => {
@@ -870,7 +908,7 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'tts-1-hd',
+        model: 'tts-1',
         input: text,
         voice: 'nova',
         response_format: 'mp3',
@@ -1229,6 +1267,1208 @@ Explanation: ${solution.explanation}`;
           }, 300);
         }
       }, duration);
+    }
+  }
+
+  async initPDFAutomaticScreenshot(tabId) {
+    
+    try {
+      // Show processing state
+      const content = document.getElementById('content');
+      content.innerHTML = `
+        <div class="empty-state">
+          <div class="loading">
+            <div class="spinner"></div>
+            <h3>📄 Setting up PDF selection...</h3>
+            <p>Preparing smart selection tool for PDF pages.</p>
+          </div>
+        </div>
+      `;
+      
+      this.showStatus('📄 Setting up PDF selection mode...', 'info');
+      
+      // For PDFs, try to inject content script first for better selection
+      try {
+        console.log('Attempting to inject content script for PDF...');
+        await chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          files: ['content.js']
+        });
+        
+        console.log('Content script injected, enabling selection...');
+        // Try to enable selection mode on the PDF
+        const response = await chrome.tabs.sendMessage(tabId, { type: 'ENABLE_SELECTION' });
+        console.log('Selection mode response:', response);
+        
+        // Wait a moment to see if it works
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Show success state
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📄</div>
+            <h2>PDF Selection Mode Active!</h2>
+            <p>Click and drag on the PDF to select the math problem area.</p>
+            <p style="color: #34a853;">✅ Smart text extraction enabled for PDFs</p>
+            <div style="margin-top: 20px;">
+              <button class="btn btn-secondary" onclick="mathTutorPanel.initPDFScreenshotMode(${tabId})">
+                📷 Use Screenshot Mode Instead
+              </button>
+            </div>
+          </div>
+        `;
+        
+        this.showStatus('✅ PDF selection mode ready! Click and drag on the PDF to select the problem.', 'success');
+        return;
+        
+      } catch (selectionError) {
+        console.log('PDF direct selection failed:', selectionError);
+        console.log('Error details:', selectionError.message);
+      }
+      
+      // If direct selection fails, try screenshot capture methods
+      await this.tryScreenshotCapture(tabId);
+      
+    } catch (error) {
+      console.error('PDF automatic methods failed:', error);
+      
+      // Show more detailed error message based on error type
+      let errorMsg = 'Chrome restricts PDF operations';
+      if (error.message.includes('screenshot')) {
+        errorMsg = 'PDF screenshot blocked by browser';
+      } else if (error.message.includes('injection')) {
+        errorMsg = 'PDF script injection blocked';
+      }
+      
+      this.showStatus(`${errorMsg}. Using manual upload mode.`, 'error');
+      
+      // Add delay before showing manual mode to ensure user sees the error
+      setTimeout(() => {
+        this.initPDFScreenshotMode(tabId);
+      }, 1500);
+    }
+  }
+
+  showPDFScreenshotSelection(screenshotData) {
+    const content = document.getElementById('content');
+    content.innerHTML = `
+      <div class="pdf-screenshot-selector">
+        <div class="screenshot-header">
+          <h3>📄 Screenshot Captured!</h3>
+          <p>Click on the image below to open the large selection window:</p>
+        </div>
+        
+        <div class="screenshot-preview clickable-preview" id="screenshotPreview">
+          <img src="${screenshotData}" alt="Captured Screenshot" class="screenshot-preview-image" />
+          <div class="screenshot-preview-overlay">
+            <div class="preview-controls">
+              <div class="click-hint">🔍 Click to Open Large Selection Window</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="screenshot-controls">
+          <button class="btn btn-secondary" id="retakeScreenshotBtn">
+            🔄 Retake Screenshot
+          </button>
+          <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">
+            📷 Upload Different Image
+          </button>
+        </div>
+      </div>
+    `;
+    
+    this.setupScreenshotSelectionMethods(screenshotData);
+  }
+
+  setupScreenshotSelectionMethods(screenshotData) {
+    const screenshotPreview = document.getElementById('screenshotPreview');
+    const retakeBtn = document.getElementById('retakeScreenshotBtn');
+    
+    // Make the entire screenshot preview clickable to open popup
+    screenshotPreview.addEventListener('click', () => {
+      this.openScreenshotInPopout(screenshotData);
+    });
+    
+    // Add cursor pointer to indicate clickability
+    screenshotPreview.style.cursor = 'pointer';
+    
+    // Retake screenshot
+    retakeBtn.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      this.initPDFAutomaticScreenshot(tab.id);
+    });
+  }
+
+  openScreenshotInPopout(screenshotData) {
+    // Generate a unique ID for this popup session
+    const popupId = 'popup_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Create pop-out window with screenshot selector
+    const popoutWindow = window.open('', popupId, 
+      'width=1200,height=800,scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=no,status=no');
+    
+    if (!popoutWindow) {
+      alert('Pop-up blocked! Please allow pop-ups for this extension and try again.');
+      return;
+    }
+    
+    // Create the pop-out content
+    popoutWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>AI Math Tutor - Screenshot Selection</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 20px;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: #f8f9fa;
+              overflow: hidden;
+            }
+            
+            .header {
+              background: linear-gradient(135deg, #4285f4, #34a853);
+              color: white;
+              padding: 15px 20px;
+              margin: -20px -20px 20px -20px;
+              border-radius: 0 0 12px 12px;
+              text-align: center;
+            }
+            
+            .header h1 {
+              margin: 0;
+              font-size: 24px;
+              font-weight: 600;
+            }
+            
+            .header p {
+              margin: 5px 0 0 0;
+              opacity: 0.9;
+              font-size: 14px;
+            }
+            
+            .screenshot-container {
+              position: relative;
+              background: white;
+              border-radius: 12px;
+              box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+              overflow: hidden;
+              margin-bottom: 20px;
+              max-height: calc(100vh - 200px);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            
+            .screenshot-canvas {
+              max-width: 100%;
+              max-height: 100%;
+              cursor: crosshair;
+              display: block;
+            }
+            
+            .selection-overlay {
+              position: absolute;
+              border: 3px dashed #4285f4;
+              background: rgba(66, 133, 244, 0.1);
+              pointer-events: none;
+              display: none;
+              z-index: 10;
+              box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
+            }
+            
+            .controls {
+              text-align: center;
+              padding: 20px;
+              background: white;
+              border-radius: 12px;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+            
+            .btn {
+              padding: 12px 24px;
+              border: none;
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 500;
+              margin: 0 10px;
+              transition: all 0.3s;
+            }
+            
+            .btn-primary {
+              background: linear-gradient(135deg, #4285f4, #1a73e8);
+              color: white;
+            }
+            
+            .btn-primary:hover {
+              background: linear-gradient(135deg, #1a73e8, #1557b0);
+              transform: translateY(-1px);
+            }
+            
+            .btn-primary:disabled {
+              opacity: 0.5;
+              cursor: not-allowed;
+              transform: none;
+            }
+            
+            .btn-secondary {
+              background: #f8f9fa;
+              color: #5f6368;
+              border: 1px solid #dadce0;
+            }
+            
+            .btn-secondary:hover {
+              background: #e8f0fe;
+            }
+            
+            .selection-info {
+              margin-top: 15px;
+              padding: 10px;
+              background: #e8f0fe;
+              border-radius: 6px;
+              color: #1976d2;
+              font-size: 13px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>📐 Select Math Problem Area</h1>
+            <p>Click and drag on the screenshot to select the problem you want to solve</p>
+          </div>
+          
+          <div class="screenshot-container" id="screenshotContainer">
+            <canvas id="screenshotCanvas" class="screenshot-canvas"></canvas>
+            <div class="selection-overlay" id="selectionOverlay"></div>
+          </div>
+          
+          <div class="controls">
+            <button class="btn btn-primary" id="confirmSelectionBtn" disabled>
+              ✅ Solve Selected Area
+            </button>
+            <button class="btn btn-secondary" id="cancelBtn">
+              ❌ Cancel
+            </button>
+            <button class="btn btn-secondary" id="resetSelectionBtn">
+              🔄 Reset Selection
+            </button>
+            
+            <div class="selection-info" id="selectionInfo" style="display: none;">
+              💡 <strong>Tip:</strong> Make sure to include the entire problem in your selection for best results!
+            </div>
+          </div>
+          
+        </body>
+      </html>
+    `);
+    
+    // Inject communication functions directly into the popup window
+    const injectCommunicationFunctions = () => {
+      console.log('💉 Injecting communication functions into popup window');
+      
+      try {
+        // Define the sendToParent function directly in the popup window
+        popoutWindow.sendToParent = function(data) {
+          console.log('📤 Sending message to parent via localStorage (injected function)');
+          
+          try {
+            // Store the message with a timestamp
+            const message = {
+              ...data,
+              timestamp: Date.now(),
+              popupId: popoutWindow.name // Use the window name as identifier
+            };
+            
+            // Store in localStorage with a unique key
+            const messageKey = 'popup_message_' + message.timestamp;
+            popoutWindow.localStorage.setItem(messageKey, JSON.stringify(message));
+            
+            // Trigger a storage event by updating a trigger key
+            popoutWindow.localStorage.setItem('popup_message_trigger', message.timestamp.toString());
+            
+            console.log('✅ Message stored in localStorage with key:', messageKey);
+            return true;
+          } catch (error) {
+            console.error('❌ Error storing message in localStorage:', error);
+            return false;
+          }
+        };
+        
+        // Define debug function
+        popoutWindow.checkCommunication = function() {
+          console.log('Communication check (injected):');
+          console.log('sendToParent available:', typeof popoutWindow.sendToParent);
+          console.log('window.name:', popoutWindow.name);
+          console.log('localStorage available:', typeof popoutWindow.localStorage);
+          return {
+            sendToParent: typeof popoutWindow.sendToParent,
+            windowName: popoutWindow.name,
+            localStorage: typeof popoutWindow.localStorage
+          };
+        };
+        
+        console.log('✅ Communication functions injected successfully');
+        console.log('sendToParent type:', typeof popoutWindow.sendToParent);
+        
+      } catch (injectionError) {
+        console.error('❌ Error injecting communication functions:', injectionError);
+      }
+    };
+    
+    // Wait for document to be ready and initialize
+    popoutWindow.addEventListener('DOMContentLoaded', () => {
+      injectCommunicationFunctions();
+      this.initializePopoutSelector(popoutWindow, screenshotData);
+    });
+    
+    // Fallback - also try after window load
+    popoutWindow.addEventListener('load', () => {
+      if (!popoutWindow.document.getElementById('screenshotCanvas').hasAttribute('data-initialized')) {
+        injectCommunicationFunctions();
+        this.initializePopoutSelector(popoutWindow, screenshotData);
+      }
+    });
+    
+    // Immediate fallback in case events don't fire
+    setTimeout(() => {
+      if (popoutWindow.document.getElementById('screenshotCanvas') && 
+          !popoutWindow.document.getElementById('screenshotCanvas').hasAttribute('data-initialized')) {
+        injectCommunicationFunctions();
+        this.initializePopoutSelector(popoutWindow, screenshotData);
+      }
+    }, 100);
+  }
+
+  initializePopoutSelector(popoutWindow, screenshotData) {
+    console.log('🎯 Initializing pop-out selector with screenshot data:', screenshotData ? 'Present' : 'Missing');
+    
+    const canvas = popoutWindow.document.getElementById('screenshotCanvas');
+    if (!canvas) {
+      console.error('❌ Canvas not found in pop-out window');
+      return;
+    }
+    
+    // Mark as initialized
+    canvas.setAttribute('data-initialized', 'true');
+    
+    const ctx = canvas.getContext('2d');
+    const container = popoutWindow.document.getElementById('screenshotContainer');
+    const overlay = popoutWindow.document.getElementById('selectionOverlay');
+    const confirmBtn = popoutWindow.document.getElementById('confirmSelectionBtn');
+    const cancelBtn = popoutWindow.document.getElementById('cancelBtn');
+    const resetBtn = popoutWindow.document.getElementById('resetSelectionBtn');
+    const selectionInfo = popoutWindow.document.getElementById('selectionInfo');
+    
+    let isSelecting = false;
+    let startX, startY, currentSelection = null;
+    
+    // Load and display screenshot
+    const img = new Image();
+    img.onload = () => {
+      console.log('✅ Image loaded successfully:', img.width, 'x', img.height);
+      
+      // Calculate optimal size for the pop-out window
+      const maxWidth = popoutWindow.innerWidth - 40;
+      const maxHeight = popoutWindow.innerHeight - 200; // Account for header and controls
+      
+      let displayWidth = img.width;
+      let displayHeight = img.height;
+      
+      // Scale down if too large (maintain aspect ratio)
+      const scaleX = maxWidth / img.width;
+      const scaleY = maxHeight / img.height;
+      const scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+      
+      displayWidth = img.width * scale;
+      displayHeight = img.height * scale;
+      
+      console.log('🔧 Scaling calculation:');
+      console.log('Original image:', img.width, 'x', img.height);
+      console.log('Max dimensions:', maxWidth, 'x', maxHeight);
+      console.log('Device pixel ratio:', window.devicePixelRatio);
+      console.log('Scale factor:', scale);
+      console.log('Final display size:', displayWidth, 'x', displayHeight);
+      
+      console.log('📐 Canvas dimensions:', displayWidth, 'x', displayHeight);
+      
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
+      
+      // Draw screenshot
+      ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+      console.log('🎨 Image drawn to canvas');
+      
+      // Mark as loaded successfully
+      canvas.setAttribute('data-image-loaded', 'true');
+      
+      // Store original dimensions for scaling calculations
+      // Account for device pixel ratio - the captured screenshot is at device resolution
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      
+      canvas.originalWidth = img.width;
+      canvas.originalHeight = img.height;
+      canvas.scaleX = img.width / displayWidth;
+      canvas.scaleY = img.height / displayHeight;
+      canvas.devicePixelRatio = devicePixelRatio;
+      
+      console.log('📏 Scale factors stored:');
+      console.log('scaleX:', canvas.scaleX, 'scaleY:', canvas.scaleY);
+      console.log('devicePixelRatio:', devicePixelRatio);
+    };
+    
+    img.onerror = (error) => {
+      console.error('❌ Failed to load image:', error);
+      console.error('Screenshot data length:', screenshotData ? screenshotData.length : 'undefined');
+      console.error('Screenshot data start:', screenshotData ? screenshotData.substring(0, 100) : 'undefined');
+      
+      // Fallback: try to show image using img element instead of canvas
+      const fallbackImg = popoutWindow.document.createElement('img');
+      fallbackImg.src = screenshotData;
+      fallbackImg.style.maxWidth = '100%';
+      fallbackImg.style.maxHeight = '100%';
+      fallbackImg.style.border = '2px solid red';
+      fallbackImg.style.display = 'block';
+      
+      container.innerHTML = '';
+      container.appendChild(fallbackImg);
+      container.appendChild(overlay);
+      
+      console.log('📷 Added fallback img element');
+    };
+    
+    img.src = screenshotData;
+    
+    // Timeout to detect if image never loads
+    setTimeout(() => {
+      if (!canvas.hasAttribute('data-image-loaded')) {
+        console.warn('⚠️ Image load timeout - trying alternative approach');
+        
+        // Try direct canvas approach
+        const testCanvas = popoutWindow.document.createElement('canvas');
+        testCanvas.width = 800;
+        testCanvas.height = 600;
+        testCanvas.style.border = '2px solid blue';
+        testCanvas.style.maxWidth = '100%';
+        testCanvas.style.maxHeight = '100%';
+        
+        const testCtx = testCanvas.getContext('2d');
+        testCtx.fillStyle = '#f0f0f0';
+        testCtx.fillRect(0, 0, 800, 600);
+        testCtx.fillStyle = '#333';
+        testCtx.font = '24px Arial';
+        testCtx.textAlign = 'center';
+        testCtx.fillText('Screenshot Loading Failed', 400, 280);
+        testCtx.fillText('Screenshot data: ' + (screenshotData ? 'Present' : 'Missing'), 400, 320);
+        
+        container.innerHTML = '';
+        container.appendChild(testCanvas);
+        container.appendChild(overlay);
+      }
+    }, 3000);
+    
+    // Selection functionality
+    canvas.addEventListener('mousedown', (e) => {
+      isSelecting = true;
+      const canvasRect = canvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // Calculate position relative to canvas
+      startX = e.clientX - canvasRect.left;
+      startY = e.clientY - canvasRect.top;
+      
+      // Calculate overlay position relative to container
+      const overlayLeft = (e.clientX - containerRect.left);
+      const overlayTop = (e.clientY - containerRect.top);
+      
+      console.log('🎯 Mouse down:', {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        canvasRect: { left: canvasRect.left, top: canvasRect.top },
+        containerRect: { left: containerRect.left, top: containerRect.top },
+        startX: startX,
+        startY: startY,
+        overlayLeft: overlayLeft,
+        overlayTop: overlayTop
+      });
+      
+      overlay.style.display = 'block';
+      overlay.style.left = overlayLeft + 'px';
+      overlay.style.top = overlayTop + 'px';
+      overlay.style.width = '0px';
+      overlay.style.height = '0px';
+      
+      selectionInfo.style.display = 'none';
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isSelecting) return;
+      
+      const canvasRect = canvas.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // Calculate current position relative to canvas
+      const currentX = e.clientX - canvasRect.left;
+      const currentY = e.clientY - canvasRect.top;
+      
+      // Calculate selection bounds relative to canvas
+      const left = Math.min(startX, currentX);
+      const top = Math.min(startY, currentY);
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+      
+      // Convert to container coordinates for overlay positioning
+      const overlayLeft = left + (canvasRect.left - containerRect.left);
+      const overlayTop = top + (canvasRect.top - containerRect.top);
+      
+      // Debug logging for alignment issues
+      if (Math.random() < 0.1) { // Log occasionally to avoid spam
+        console.log('📐 Overlay positioning:', {
+          canvasOffset: { x: canvasRect.left - containerRect.left, y: canvasRect.top - containerRect.top },
+          selectionOnCanvas: { left, top, width, height },
+          overlayPosition: { left: overlayLeft, top: overlayTop }
+        });
+      }
+      
+      overlay.style.left = overlayLeft + 'px';
+      overlay.style.top = overlayTop + 'px';
+      overlay.style.width = width + 'px';
+      overlay.style.height = height + 'px';
+    });
+    
+    canvas.addEventListener('mouseup', (e) => {
+      if (!isSelecting) return;
+      isSelecting = false;
+      
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+      
+      const left = Math.min(startX, endX);
+      const top = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+      
+      // Check if selection is large enough
+      if (width > 30 && height > 30) {
+        currentSelection = {
+          x: left,
+          y: top,
+          width: width,
+          height: height
+        };
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = `✅ Solve Selected Area (${Math.round(width)}×${Math.round(height)})`;
+        selectionInfo.style.display = 'block';
+      } else {
+        overlay.style.display = 'none';
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '✅ Solve Selected Area';
+        selectionInfo.style.display = 'none';
+      }
+    });
+    
+    // Confirm selection
+    confirmBtn.addEventListener('click', async () => {
+      if (!currentSelection) return;
+      
+      try {
+        // Set flag to indicate solve button was clicked
+        solvingInProgress = true;
+        console.log('✅ Solve button clicked, setting solvingInProgress flag');
+        
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '🤔 Processing...';
+        
+        // Calculate coordinates relative to original image
+        // The captured screenshot is at device resolution, so we need to account for that
+        const devicePixelRatio = canvas.devicePixelRatio || 1;
+        
+        const cropData = {
+          x: currentSelection.x * canvas.scaleX,
+          y: currentSelection.y * canvas.scaleY,
+          width: currentSelection.width * canvas.scaleX,
+          height: currentSelection.height * canvas.scaleY
+        };
+        
+        console.log('🔍 Cropping calculation debug:');
+        console.log('Canvas size (display):', canvas.width, 'x', canvas.height);
+        console.log('Original image size:', canvas.originalWidth, 'x', canvas.originalHeight);
+        console.log('Device pixel ratio:', devicePixelRatio);
+        console.log('Scale factors:', { scaleX: canvas.scaleX, scaleY: canvas.scaleY });
+        console.log('Selection (display coords):', currentSelection);
+        console.log('Crop data (original coords):', cropData);
+        
+        // Validate crop bounds to ensure we don't exceed image dimensions
+        const safeCropData = {
+          x: Math.max(0, Math.min(cropData.x, canvas.originalWidth - 1)),
+          y: Math.max(0, Math.min(cropData.y, canvas.originalHeight - 1)),
+          width: Math.max(1, Math.min(cropData.width, canvas.originalWidth - cropData.x)),
+          height: Math.max(1, Math.min(cropData.height, canvas.originalHeight - cropData.y))
+        };
+        
+        console.log('Safe crop data (bounds checked):', safeCropData);
+        
+        // Crop the screenshot (create inline function since we're in pop-out context)
+        const croppedImage = await new Promise((resolve) => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const img = new Image();
+          
+          img.onload = () => {
+            canvas.width = cropData.width;
+            canvas.height = cropData.height;
+            
+            ctx.drawImage(
+              img,
+              cropData.x, cropData.y, cropData.width, cropData.height,
+              0, 0, cropData.width, cropData.height
+            );
+            
+            resolve(canvas.toDataURL('image/png', 1.0));
+          };
+          
+          img.src = screenshotData;
+        });
+        
+        // Process the cropped area using localStorage communication
+        console.log('🔗 Attempting to send message to parent...');
+        console.log('🔍 Debug popup window environment:');
+        console.log('window.sendToParent type:', typeof window.sendToParent);
+        console.log('window.checkCommunication type:', typeof window.checkCommunication);
+        console.log('window.name:', window.name);
+        console.log('localStorage available:', typeof localStorage);
+        
+        // Call debug function if available
+        if (typeof window.checkCommunication === 'function') {
+          const commCheck = window.checkCommunication();
+          console.log('Communication check result:', commCheck);
+        }
+        
+        // Try localStorage method first (most reliable)
+        if (typeof window.sendToParent === 'function') {
+          console.log('✅ Using localStorage communication method');
+          
+          const success = window.sendToParent({
+            type: 'PROCESS_MATH_PROBLEM_FROM_POPUP',
+            imageData: croppedImage,
+            selectedText: 'Math problem from screenshot selection'
+          });
+          
+          if (success) {
+            console.log('✅ Message sent via localStorage');
+          } else {
+            throw new Error('Failed to send message via localStorage');
+          }
+        }
+        // Fallback: direct localStorage access (doesn't need injected function)
+        else if (typeof localStorage !== 'undefined') {
+          console.log('⚠️ Falling back to direct localStorage method');
+          
+          try {
+            const message = {
+              type: 'PROCESS_MATH_PROBLEM_FROM_POPUP',
+              imageData: croppedImage,
+              selectedText: 'Math problem from screenshot selection',
+              timestamp: Date.now(),
+              popupId: window.name
+            };
+            
+            const messageKey = 'popup_message_' + message.timestamp;
+            localStorage.setItem(messageKey, JSON.stringify(message));
+            localStorage.setItem('popup_message_trigger', message.timestamp.toString());
+            
+            console.log('✅ Message sent via direct localStorage access');
+          } catch (localStorageError) {
+            console.error('❌ Direct localStorage access failed:', localStorageError);
+            throw new Error('Failed to communicate with parent window');
+          }
+        }
+        // Last resort: postMessage fallback
+        else if (window.opener && !window.opener.closed) {
+          console.log('⚠️ Falling back to postMessage method');
+          
+          window.opener.postMessage({
+            type: 'PROCESS_MATH_PROBLEM_FROM_POPUP',
+            imageData: croppedImage,
+            selectedText: 'Math problem from screenshot selection'
+          }, '*');
+          console.log('📤 Message sent via postMessage');
+        }
+        else {
+          console.error('❌ No communication method available');
+          console.error('sendToParent available:', typeof window.sendToParent);
+          console.error('localStorage available:', typeof localStorage);
+          console.error('window.opener available:', !!window.opener);
+          console.error('window.opener.closed:', window.opener?.closed);
+          throw new Error('No communication method available. Please close this window and try again.');
+        }
+        
+        // Show success feedback before closing
+        confirmBtn.textContent = '✅ Success! Closing window...';
+        confirmBtn.style.background = '#34a853';
+        
+        // Status update will be handled by the parent window via postMessage
+        
+        // Small delay to show success, then close window
+        setTimeout(() => {
+          popoutWindow.close();
+        }, 1000);
+        
+      } catch (error) {
+        console.error('Error processing selection:', error);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '❌ Error - Try Again';
+        confirmBtn.style.background = '#ea4335';
+        
+        // Reset button after delay
+        setTimeout(() => {
+          confirmBtn.textContent = '✅ Solve Selected Area';
+          confirmBtn.style.background = '';
+        }, 3000);
+        
+        // Provide more specific error message
+        let errorMessage = 'Error processing selection. Please try again.';
+        if (error.message) {
+          if (error.message.includes('Extension context invalidated')) {
+            errorMessage = 'Extension was reloaded. Please refresh this page and try again.';
+          } else if (error.message.includes('chrome.runtime')) {
+            errorMessage = 'Extension communication error. Please refresh the page and try again.';
+          } else {
+            errorMessage = `Error: ${error.message}. Please try again.`;
+          }
+        }
+        
+        alert(errorMessage);
+      }
+    });
+    
+    // Reset selection
+    resetBtn.addEventListener('click', () => {
+      overlay.style.display = 'none';
+      currentSelection = null;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '✅ Solve Selected Area';
+      selectionInfo.style.display = 'none';
+    });
+    
+    // Cancel and close
+    cancelBtn.addEventListener('click', () => {
+      popoutWindow.close();
+    });
+    
+    // Track if solve button was clicked
+    let solvingInProgress = false;
+    
+    // Handle window close
+    popoutWindow.addEventListener('beforeunload', () => {
+      // Only show processing state if solve button was clicked
+      if (solvingInProgress) {
+        console.log('🔄 Popup window closing after solve button clicked, showing processing state...');
+        const content = document.getElementById('content');
+        content.innerHTML = this.getLoadingHTML();
+        this.showStatus('📸 Processing your screenshot selection...', 'info');
+      } else {
+        console.log('🔄 Popup window closed without solving, returning to screenshot selection...');
+        // Return to screenshot selection if user just closed without solving
+        this.showPDFScreenshotSelection(screenshotData);
+      }
+    });
+  }
+
+
+  initializeScreenshotSelector(screenshotData) {
+    const canvas = document.getElementById('screenshotCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('screenshotContainer');
+    const overlay = document.getElementById('selectionOverlay');
+    const confirmBtn = document.getElementById('confirmSelectionBtn');
+    const retakeBtn = document.getElementById('retakeScreenshotBtn');
+    
+    let isSelecting = false;
+    let startX, startY, currentSelection = null;
+    
+    // Load and display screenshot
+    const img = new Image();
+    img.onload = () => {
+      // Size canvas to fit container while maintaining aspect ratio
+      const containerWidth = container.clientWidth - 20; // Account for padding
+      const aspectRatio = img.height / img.width;
+      canvas.width = Math.min(containerWidth, img.width);
+      canvas.height = canvas.width * aspectRatio;
+      
+      // Draw screenshot
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      // Store original image data for cropping
+      canvas.originalImageData = screenshotData;
+      canvas.originalWidth = img.width;
+      canvas.originalHeight = img.height;
+    };
+    img.src = screenshotData;
+    
+    // Selection functionality
+    canvas.addEventListener('mousedown', (e) => {
+      isSelecting = true;
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      
+      overlay.style.display = 'block';
+      overlay.style.left = startX + 'px';
+      overlay.style.top = startY + 'px';
+      overlay.style.width = '0px';
+      overlay.style.height = '0px';
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isSelecting) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top;
+      
+      const left = Math.min(startX, currentX);
+      const top = Math.min(startY, currentY);
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+      
+      overlay.style.left = left + 'px';
+      overlay.style.top = top + 'px';
+      overlay.style.width = width + 'px';
+      overlay.style.height = height + 'px';
+    });
+    
+    canvas.addEventListener('mouseup', (e) => {
+      if (!isSelecting) return;
+      isSelecting = false;
+      
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const endY = e.clientY - rect.top;
+      
+      const left = Math.min(startX, endX);
+      const top = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+      
+      // Check if selection is large enough
+      if (width > 20 && height > 20) {
+        currentSelection = {
+          x: left,
+          y: top,
+          width: width,
+          height: height
+        };
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = `✅ Solve Selected Area (${Math.round(width)}x${Math.round(height)})`;
+      } else {
+        overlay.style.display = 'none';
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '✅ Solve Selected Area';
+      }
+    });
+    
+    // Confirm selection
+    confirmBtn.addEventListener('click', async () => {
+      if (!currentSelection) return;
+      
+      try {
+        this.showStatus('🤔 Processing selected area...', 'info');
+        
+        // Calculate coordinates relative to original image
+        const scaleX = canvas.originalWidth / canvas.width;
+        const scaleY = canvas.originalHeight / canvas.height;
+        
+        const cropData = {
+          x: currentSelection.x * scaleX,
+          y: currentSelection.y * scaleY,
+          width: currentSelection.width * scaleX,
+          height: currentSelection.height * scaleY
+        };
+        
+        // Crop the screenshot
+        const croppedImage = await this.cropScreenshotImage(screenshotData, cropData);
+        
+        // Process the cropped area
+        await chrome.runtime.sendMessage({
+          type: 'PROCESS_MATH_PROBLEM',
+          imageData: croppedImage,
+          selectedText: 'Math problem from PDF screenshot selection'
+        });
+        
+        this.showStatus('✅ Processing your selected math problem...', 'success');
+        
+      } catch (error) {
+        console.error('Error processing selection:', error);
+        this.showStatus('Error processing selection. Please try again.', 'error');
+      }
+    });
+    
+    // Retake screenshot
+    retakeBtn.addEventListener('click', async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      this.initPDFAutomaticScreenshot(tab.id);
+    });
+  }
+
+  async tryScreenshotCapture(tabId) {
+    this.showStatus('📸 Taking screenshot of PDF...', 'info');
+    console.log('Requesting full screenshot...');
+    
+    try {
+      // Method 1: Try traditional tab capture
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      const screenshotData = await chrome.runtime.sendMessage({
+        type: 'CAPTURE_FULL_SCREENSHOT',
+        tabId: tab.id
+      });
+      
+      console.log('Screenshot response:', screenshotData);
+      console.log('Screenshot data length:', screenshotData?.imageData?.length);
+      console.log('Screenshot success:', screenshotData?.success);
+      
+      if (screenshotData && screenshotData.success && screenshotData.imageData) {
+        // Success! Show screenshot selection interface
+        this.showPDFScreenshotSelection(screenshotData.imageData);
+        this.showStatus('✅ Screenshot captured! Click and drag to select the math problem area.', 'success');
+        return;
+      }
+      
+      // Method 2: Try Screen Capture API (if available)
+      if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+        console.log('Trying Screen Capture API...');
+        await this.tryScreenCaptureAPI();
+        return;
+      }
+      
+      // All methods failed
+      throw new Error(screenshotData?.error || 'All screenshot methods failed');
+      
+    } catch (error) {
+      console.error('Screenshot capture failed:', error);
+      throw error;
+    }
+  }
+
+  async tryScreenCaptureAPI() {
+    try {
+      this.showStatus('📱 Opening screen capture...', 'info');
+      
+      // Show instructions for screen capture
+      const content = document.getElementById('content');
+      content.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📱</div>
+          <h2>Screen Capture Mode</h2>
+          <p style="margin-bottom: 20px;">For PDFs and restricted pages, screen capture is required to access the content:</p>
+          
+          <button 
+            id="screenCaptureBtn" 
+            class="btn btn-primary" 
+            style="padding: 15px 30px; font-size: 16px;"
+          >
+            🖥️ Capture Screen
+          </button>
+          
+          <div style="margin-top: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; color: #1976d2;">
+            <strong>📋 Instructions:</strong><br>
+            1. Click "Capture Screen"<br>
+            2. Select the browser tab with your PDF or document<br>
+            3. You'll get a large selection window to choose the problem area
+          </div>
+        </div>
+      `;
+      
+      // Add event listener for screen capture
+      document.getElementById('screenCaptureBtn').addEventListener('click', async () => {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { mediaSource: 'screen' }
+          });
+          
+          // Create video element to capture frame
+          const video = document.createElement('video');
+          video.srcObject = stream;
+          video.play();
+          
+          video.onloadedmetadata = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            // Stop the stream
+            stream.getTracks().forEach(track => track.stop());
+            
+            // Get the captured image
+            const capturedImage = canvas.toDataURL('image/png');
+            
+            // Show screenshot selection interface
+            this.showPDFScreenshotSelection(capturedImage);
+            this.showStatus('✅ Screen captured! Click and drag to select the math problem area.', 'success');
+          };
+          
+        } catch (captureError) {
+          console.error('Screen capture failed:', captureError);
+          this.showStatus('Screen capture cancelled or failed.', 'error');
+          throw captureError;
+        }
+      });
+      
+    } catch (error) {
+      console.error('Screen Capture API failed:', error);
+      throw error;
+    }
+  }
+
+  async cropScreenshotImage(imageData, cropData) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        canvas.width = cropData.width;
+        canvas.height = cropData.height;
+        
+        ctx.drawImage(
+          img,
+          cropData.x, cropData.y, cropData.width, cropData.height,
+          0, 0, cropData.width, cropData.height
+        );
+        
+        resolve(canvas.toDataURL('image/png', 1.0));
+      };
+      
+      img.src = imageData;
+    });
+  }
+
+  initPDFScreenshotMode(tabId) {
+    console.log('Initializing PDF screenshot mode for tab:', tabId);
+    
+    // Show instructions for screenshot mode
+    const content = document.getElementById('content');
+    content.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <h2>PDF Screenshot Mode</h2>
+        <p style="margin-bottom: 15px; color: #ea4335;">⚠️ Chrome restricts automatic PDF operations</p>
+        <p style="margin-bottom: 20px;">Please manually capture a screenshot of the math problem:</p>
+        
+        <div style="text-align: left; max-width: 420px; margin: 0 auto; background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #4285f4;">
+          <h3 style="margin-top: 0; color: #1976d2;">📸 Quick Screenshot Guide</h3>
+          
+          <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
+            <strong>Mac:</strong> <code style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px;">⌘ Cmd + Shift + 4</code><br>
+            <small style="color: #666;">Then drag to select the problem area</small>
+          </div>
+          
+          <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
+            <strong>Windows:</strong> <code style="background: #e8f0fe; padding: 2px 6px; border-radius: 3px;">Win + Shift + S</code><br>
+            <small style="color: #666;">Then select rectangular snip</small>
+          </div>
+          
+          <div style="background: #e8f5e8; padding: 12px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #34a853;">
+            <strong>💡 Pro Tip:</strong> Capture just the math problem area for best results!
+          </div>
+          
+          <button 
+            id="pdfUploadBtn" 
+            class="btn btn-primary" 
+            style="width: 100%; padding: 12px; font-size: 16px; background: linear-gradient(135deg, #34a853, #137333);"
+            onclick="document.getElementById('imageInput').click()"
+          >
+            📷 Upload Screenshot
+          </button>
+        </div>
+        
+        <div style="margin-top: 20px;">
+          <button class="btn btn-secondary" onclick="mathTutorPanel.initPDFAutomaticScreenshot(${tabId})">
+            🔄 Try Automatic Mode Again
+          </button>
+          <button class="btn btn-secondary" onclick="mathTutorPanel.newProblem()">
+            ↻ Try Different Page
+          </button>
+        </div>
+      </div>
+    `;
+    
+    this.showStatus('📄 Manual screenshot mode ready. Capture the problem area and upload it.', 'info');
+  }
+
+  async processPopupMessage(timestamp) {
+    const messageKey = 'popup_message_' + timestamp;
+    const messageData = localStorage.getItem(messageKey);
+    
+    if (messageData) {
+      try {
+        const message = JSON.parse(messageData);
+        console.log('📨 Parsed popup message:', message);
+        
+        if (message.type === 'PROCESS_MATH_PROBLEM_FROM_POPUP') {
+          console.log('✅ Processing math problem from popup window via localStorage');
+          console.log('Image data length:', message.imageData ? message.imageData.length : 'no image');
+          
+          try {
+            // Immediately show processing state in the main content area
+            const content = document.getElementById('content');
+            content.innerHTML = this.getLoadingHTML();
+            
+            // Clear any existing problem data to ensure clean state
+            this.currentProblem = null;
+            
+            // Update status
+            this.showStatus('📸 Processing screenshot selection...', 'info');
+            
+            // Process the math problem using Chrome APIs from the side panel context
+            console.log('📤 Sending to background script...');
+            const response = await chrome.runtime.sendMessage({
+              type: 'PROCESS_MATH_PROBLEM',
+              imageData: message.imageData,
+              selectedText: message.selectedText
+            });
+            console.log('✅ Background processing response:', response);
+            
+            // The solution will be displayed automatically when storage updates
+            // via the existing storage listener
+            this.showStatus('✅ Processing your selected math problem...', 'success');
+            
+            // Clean up the message from localStorage
+            localStorage.removeItem(messageKey);
+            localStorage.removeItem('popup_message_trigger');
+            console.log('🧹 Cleaned up message from localStorage');
+            
+          } catch (error) {
+            console.error('❌ Error processing message from popup:', error);
+            this.showStatus('Error processing selection. Please try again.', 'error');
+          }
+        }
+      } catch (parseError) {
+        console.error('❌ Error parsing popup message:', parseError);
+      }
+    } else {
+      console.log('⚠️ Message data not found for key:', messageKey);
+    }
+  }
+
+  checkForPopupMessages() {
+    // Check for any popup messages that might have been missed
+    const trigger = localStorage.getItem('popup_message_trigger');
+    if (trigger && !this.lastProcessedTrigger) {
+      console.log('🔍 Found unprocessed popup message trigger via polling:', trigger);
+      this.processPopupMessage(trigger);
+      this.lastProcessedTrigger = trigger;
+    } else if (trigger !== this.lastProcessedTrigger) {
+      console.log('🔍 Found new popup message trigger via polling:', trigger);
+      this.processPopupMessage(trigger);
+      this.lastProcessedTrigger = trigger;
     }
   }
 }

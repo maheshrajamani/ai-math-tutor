@@ -219,9 +219,10 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
     const toolbar = document.createElement('div');
     toolbar.className = 'math-tutor-toolbar';
     toolbar.innerHTML = `
-      <div style="margin-bottom: 8px; font-weight: bold; color: #d93025;">📄 PDF Mode</div>
+      <div style="margin-bottom: 8px; font-weight: bold; color: #1976d2;">📄 PDF Mode</div>
       <div style="margin-bottom: 8px; color: #666; font-size: 11px;">Click and drag to select problem area</div>
-      <div style="margin-bottom: 10px; color: #ea4335; font-size: 10px;">⚠️ PDF selection may be limited</div>
+      <div style="margin-bottom: 8px; color: #34a853; font-size: 10px;">✓ Smart text extraction + screenshot</div>
+      <div style="margin-bottom: 10px; color: #666; font-size: 10px;">Works best with text-based PDFs</div>
       <button class="math-tutor-btn math-tutor-btn-secondary" onclick="mathTutorSelector.cancelSelection()">
         Cancel
       </button>
@@ -230,7 +231,7 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
     // Position toolbar for better PDF visibility
     toolbar.style.top = '10px';
     toolbar.style.right = '10px';
-    toolbar.style.maxWidth = '200px';
+    toolbar.style.maxWidth = '220px';
     toolbar.style.fontSize = '12px';
     
     document.body.appendChild(toolbar);
@@ -461,6 +462,15 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
 
   getSelectedText(rect) {
     try {
+      // Check if this is a PDF and try PDF-specific extraction first
+      if (this.isPDFPage()) {
+        const pdfText = this.extractPDFText(rect);
+        if (pdfText) {
+          console.log('Extracted PDF text:', pdfText);
+          return pdfText;
+        }
+      }
+      
       // Method 1: Get all text content that intersects with selection
       let allText = '';
       const textNodes = this.getAllTextInRect(rect);
@@ -486,6 +496,122 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
       console.error('Error extracting text:', error);
       return '';
     }
+  }
+
+  extractPDFText(rect) {
+    try {
+      // Method 1: Try to access Chrome's PDF viewer text layer
+      const textLayer = document.querySelector('.textLayer') || 
+                       document.querySelector('#textLayer') ||
+                       document.querySelector('[class*="text"]');
+      
+      if (textLayer) {
+        console.log('Found PDF text layer:', textLayer);
+        return this.extractTextFromPDFLayer(textLayer, rect);
+      }
+      
+      // Method 2: Try to access PDF.js text content
+      if (window.PDFViewerApplication && window.PDFViewerApplication.pdfViewer) {
+        console.log('Found PDF.js viewer');
+        return this.extractTextFromPDFJS(rect);
+      }
+      
+      // Method 3: Look for any selectable text within the area
+      const pdfText = this.extractSelectableTextInRect(rect);
+      if (pdfText) {
+        return pdfText;
+      }
+      
+      console.log('No PDF text extraction method worked, falling back to screenshot');
+      return '';
+      
+    } catch (error) {
+      console.error('PDF text extraction failed:', error);
+      return '';
+    }
+  }
+
+  extractTextFromPDFLayer(textLayer, rect) {
+    try {
+      const textElements = textLayer.querySelectorAll('span, div');
+      let extractedText = '';
+      
+      for (const element of textElements) {
+        const elementRect = element.getBoundingClientRect();
+        
+        // Check if element intersects with selection
+        if (this.rectsIntersect(rect, elementRect)) {
+          extractedText += element.textContent + ' ';
+        }
+      }
+      
+      return this.cleanAndFormatText(extractedText);
+    } catch (error) {
+      console.error('Error extracting from PDF text layer:', error);
+      return '';
+    }
+  }
+
+  extractTextFromPDFJS(rect) {
+    try {
+      // Access PDF.js internal text content
+      const viewer = window.PDFViewerApplication.pdfViewer;
+      const currentPage = viewer.currentPageNumber;
+      const pageView = viewer.getPageView(currentPage - 1);
+      
+      if (pageView && pageView.textLayer) {
+        const textLayer = pageView.textLayer.textLayerDiv;
+        return this.extractTextFromPDFLayer(textLayer, rect);
+      }
+      
+      return '';
+    } catch (error) {
+      console.error('Error accessing PDF.js text:', error);
+      return '';
+    }
+  }
+
+  extractSelectableTextInRect(rect) {
+    try {
+      // Create a temporary range to select text in the area
+      const range = document.createRange();
+      const selection = window.getSelection();
+      
+      // Try to select text programmatically within the rect bounds
+      const startPoint = document.elementFromPoint(rect.left, rect.top);
+      const endPoint = document.elementFromPoint(rect.right, rect.bottom);
+      
+      if (startPoint && endPoint) {
+        try {
+          range.setStart(startPoint, 0);
+          range.setEnd(endPoint, endPoint.childNodes.length || 0);
+          
+          selection.removeAllRanges();
+          selection.addRange(range);
+          
+          const selectedText = selection.toString();
+          selection.removeAllRanges(); // Clean up
+          
+          if (selectedText.trim()) {
+            return this.cleanAndFormatText(selectedText);
+          }
+        } catch (rangeError) {
+          console.log('Range selection failed, trying alternative method');
+        }
+      }
+      
+      return '';
+    } catch (error) {
+      console.error('Error with selectable text extraction:', error);
+      return '';
+    }
+  }
+
+  rectsIntersect(rect1, rect2) {
+    return !(rect1.right < rect2.left || 
+             rect1.left > rect2.right || 
+             rect1.bottom < rect2.top || 
+             rect1.top > rect2.bottom);
   }
 
   getAllTextInRect(rect) {

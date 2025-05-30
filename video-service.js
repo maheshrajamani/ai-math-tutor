@@ -362,7 +362,7 @@ class VideoService {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'tts-1-hd', // High-definition model
+        model: 'tts-1', // Standard quality model
         input: text,
         voice: 'nova', // Clear, friendly voice
         response_format: 'mp3',
