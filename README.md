@@ -6,7 +6,7 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 
 - **📐 Universal Problem Selection**: Works on any website, document, or application
 - **🔍 Smart Detection**: Automatically tries direct selection, falls back to screen capture when needed
-- **🤖 AI-Powered Solutions**: Get step-by-step solutions using multiple AI providers (Google Gemini Free + OpenAI)
+- **🤖 AI-Powered Solutions**: Get step-by-step solutions using multiple AI providers (Google Gemini (Free Tier available) + OpenAI)
 - **🎯 Smart Model Selection**: Automatically chooses the best AI model based on problem type
 - **📋 Multiple Choice Support**: Handles both multiple choice and open-ended questions
 - **📄 Document Support**: Works seamlessly with PDFs, Google Docs, Office 365, and more
@@ -35,7 +35,7 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 
 ### 2. Choose Your AI Provider
 
-#### Option A: Google Gemini (Free) 🆓
+#### Option A: Google Gemini (Free Tier available) 🆓
 1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
 2. Sign in with your Google account  
 3. Click "Create API Key" and copy it
@@ -115,24 +115,25 @@ ai-tutor/
 - **Background Script**: Manages AI API calls and data processing  
 - **Side Panel**: Displays solutions and explanations
 - **AI Service**: Integrates with OpenAI GPT-4 Vision API
-- **Video Service**: Generates animated explanation videos
+- **Audio Service**: Generates transcript using text models and uses Browser TTS
 
 ### API Integration
 
 The extension supports multiple AI providers:
 
-- **Google Gemini** (Free) - Free tier with generous limits, excellent vision and reasoning
-  - Gemini 2.0 Flash: Latest model with best performance and reasoning ⭐
+- **Google Gemini** - Free tier with generous limits, excellent vision and reasoning
+  - Gemini 2.5 Flash: Newest model with enhanced performance and reasoning capabilities ⭐⭐
+  - Gemini 2.0 Flash: Latest model with best performance and reasoning (recommended) ⭐
   - Gemini 1.5 Flash: Fast and efficient for most problems
   - Gemini 1.5 Pro: Advanced reasoning for complex problems  
   - Gemini 1.0 Pro: Text-only for simple problems
-  - **Audio**: Free Google Text-to-Speech for explanations 🔊
+  - **Audio**: Using cheaper text model and browser TTS
 - **OpenAI GPT-4 Vision** (Paid) - Excellent for math + image processing
   - GPT-4o: Best for complex problems with images
   - GPT-4o Mini: Fast and cost-effective
   - GPT-4 Vision: Good for image analysis
   - GPT-4: Text-only, high quality
-  - **Audio**: OpenAI Text-to-Speech for explanations 🔊
+  - **Audio**: Using cheaper text model and browser TTS
 - **Claude** (Coming Soon) - Strong reasoning capabilities
 
 ### Customization
@@ -140,7 +141,7 @@ The extension supports multiple AI providers:
 Edit `config.js` to modify:
 - AI model parameters
 - Prompt templates
-- Video generation settings
+- Audio generation settings
 - Default preferences
 
 ## 📝 Usage Examples
@@ -166,23 +167,6 @@ Edit `config.js` to modify:
 - Percentage calculations
 - Statistics and probability
 
-## ⚙️ Configuration
-
-### AI Provider Settings
-- **API Key**: Your OpenAI API key
-- **Model**: GPT-4 Vision (recommended)
-- **Temperature**: 0.1 (for accurate math)
-
-### Video Settings
-- **Enable Videos**: Toggle animated explanations
-- **Voice Speed**: Adjust narration speed
-- **Quality**: Video resolution and framerate
-
-### General Settings
-- **Target Level**: Elementary, Middle School, High School, College
-- **Show Steps**: Always display step-by-step solutions
-- **Auto-Save**: Save solutions automatically
-
 ## 🔒 Privacy & Security
 
 - **Local Storage**: All data is stored locally in your browser
@@ -193,10 +177,7 @@ Edit `config.js` to modify:
 ## 💰 Cost Information
 
 ### Google Gemini (Free Tier) 🆓
-- **All models**: FREE with generous daily limits
-- **Gemini 1.5 Flash**: Up to 15 RPM (requests per minute)
-- **Gemini 1.5 Pro**: Up to 2 RPM
-- **Perfect for students**: No payment required!
+- **Perfect for students**: No payment required with free tier!
 - **Verify current limits**: [Check official pricing](https://ai.google.dev/gemini-api/docs/pricing)
 
 ### OpenAI (Paid Usage)
@@ -211,7 +192,6 @@ Edit `config.js` to modify:
 **Total per problem:**
 - **Text-only**: $0.0001 (GPT-4o-mini)
 - **With images**: $0.001 (GPT-4o) 
-- **With audio**: +$0.0075 (TTS narration)
 
 **$5 credit**: Handles 6,000+ problems with audio or 50,000+ text-only problems
 
@@ -220,8 +200,6 @@ Edit `config.js` to modify:
 ## 🛠️ Settings
 
 ### AI Provider Options
-- **Google Gemini** (Free): Choose from 2.0 Flash, 1.5 Flash, 1.5 Pro, or 1.0 Pro models
-- **OpenAI** (Paid): Choose from GPT-4o, GPT-4o Mini, GPT-4 Vision, or GPT-4
 
 ### Model Selection
 - **Auto** (recommended): Smart model selection based on problem type and content
@@ -244,7 +222,7 @@ Edit `config.js` to modify:
 - Test the connection in Settings to verify your setup
 
 **"Rate limit exceeded"**
-- **Google Gemini**: Free tier has rate limits (15 RPM for Flash, 2 RPM for Pro)
+- **Google Gemini**: Free tier has rate limits 
 - **OpenAI**: Check your usage limits and billing settings
 - Wait a moment before trying again
 
