@@ -204,6 +204,9 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
            (window.location.href.startsWith('chrome-extension://') && 
             window.location.href.includes('.pdf') &&
             document.querySelector('pdf-viewer')) ||
+           // Edge's built-in PDF viewer
+           (window.location.href.startsWith('edge://') && 
+            window.location.href.includes('.pdf')) ||
            // Check document type
            document.documentElement.getAttribute('data-content-type') === 'application/pdf';
   }

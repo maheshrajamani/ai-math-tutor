@@ -1,6 +1,6 @@
-# 🧮 AI Math Tutor Chrome Extension
+# 🧮 AI Math Tutor Browser Extension
 
-An intelligent Chrome extension that helps you solve math problems with AI-powered step-by-step solutions.
+An intelligent browser extension that helps you solve math problems with AI-powered step-by-step solutions. Compatible with Chrome and Microsoft Edge browsers.
 
 ## ✨ Features
 
@@ -26,9 +26,17 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 3. Select **"Download ZIP"**
 4. Extract the ZIP file to a folder on your computer
 
-#### Install in Chrome:
+#### Install in Chrome or Edge:
+**For Chrome:**
 1. Open Chrome and go to `chrome://extensions/`
 2. Enable **"Developer mode"** (toggle in top-right corner)
+3. Click **"Load unpacked"**
+4. Select the extracted folder containing the extension files
+5. The AI Math Tutor extension should now appear in your extensions list
+
+**For Microsoft Edge:**
+1. Open Edge and go to `edge://extensions/`
+2. Enable **"Developer mode"** (toggle in left sidebar)
 3. Click **"Load unpacked"**
 4. Select the extracted folder containing the extension files
 5. The AI Math Tutor extension should now appear in your extensions list
@@ -48,7 +56,7 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 4. Add credits to your account ($5-10 is plenty for hundreds of problems)
 
 ### 3. Configure the Extension
-1. Click the extension icon in Chrome
+1. Click the extension icon in your browser (Chrome or Edge)
 2. Click the ⚙️ Settings button
 3. Choose your AI Provider:
    - **Google Gemini**: Select "Google" and enter your API key
