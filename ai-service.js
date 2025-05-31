@@ -23,6 +23,24 @@ class AIService {
       throw new Error('API key not configured. Please set your OpenAI API key in the extension settings.');
     }
 
+    // Child Safety: Pre-filter content before sending to AI
+    const contentCheck = this.isContentAppropriate(selectedText, imageData);
+    if (!contentCheck.isAppropriate) {
+      console.log('🛡️ Child Safety Filter: Content blocked -', contentCheck.reason);
+      return {
+        type: 'safe_response',
+        problem: 'Non-mathematical content detected',
+        solution: 'I am not aware of what you are asking',
+        steps: ['This extension only helps with math problems'],
+        explanation: 'Please select a mathematical problem to solve.',
+        usedVision: false,
+        isError: false,
+        filtered: true,
+        reason: contentCheck.reason
+      };
+    }
+    console.log('✅ Child Safety Filter: Content approved -', contentCheck.reason);
+
     // Basic rate limiting (2 seconds between requests)
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
@@ -119,7 +137,12 @@ class AIService {
     const messages = [
       {
         role: "system",
-        content: `You are a math tutor with vision capabilities. Analyze both the text and image to solve math problems.
+        content: `You are a math tutor with vision capabilities designed for children. Focus on mathematical problems and educational content.
+
+CHILD-FRIENDLY GUIDELINES:
+- Use age-appropriate language suitable for students
+- If the content is not a math problem, please respond: "I am not aware of what you are asking"
+- Maintain educational focus and avoid inappropriate content
 
 CRITICAL INSTRUCTIONS:
 - For geometry problems (circles, triangles, etc.), pay careful attention to π symbols and geometric formulas
@@ -243,7 +266,12 @@ If this is a geometry problem about circles, triangles, etc., make sure to look 
     const messages = [
       {
         role: "system",
-        content: `You are a math tutor with vision capabilities using GPT-4o. Analyze both the text and image to solve math problems.
+        content: `You are a math tutor with vision capabilities using GPT-4o designed for children. Focus on mathematical problems and educational content.
+
+CHILD-FRIENDLY GUIDELINES:
+- Use age-appropriate language suitable for students
+- If the content is not a math problem, please respond: "I am not aware of what you are asking"
+- Maintain educational focus and avoid inappropriate content
 
 MOST IMPORTANT RULE: NEVER change your mathematically correct answer to force it to match a multiple choice option. Trust your calculations.
 
@@ -391,7 +419,14 @@ Please solve this step by step.` :
         messages: [
           {
             role: "system",
-            content: `You are an expert math tutor. Solve the given math problem step by step with high accuracy.
+            content: `You are an expert math tutor designed for children. Focus on mathematical problems and educational content.
+
+CHILD-FRIENDLY GUIDELINES:
+- Use age-appropriate language suitable for students
+- If the content is not a math problem, please respond: "I am not aware of what you are asking"
+- Maintain educational focus and avoid inappropriate content
+
+Solve the given math problem step by step with high accuracy.
 
 CRITICAL INSTRUCTIONS for geometry problems:
 - Circle area = πr² (where r is radius, and radius = diameter ÷ 2)
@@ -486,7 +521,14 @@ Always format your response as JSON with these exact fields:
         messages: [
           {
             role: "system",
-            content: `You are a math tutor. Solve the given math problem step by step. 
+            content: `You are a math tutor designed for children. Focus on mathematical problems and educational content.
+
+CHILD-FRIENDLY GUIDELINES:
+- Use age-appropriate language suitable for students
+- If the content is not a math problem, please respond: "I am not aware of what you are asking"
+- Maintain educational focus and avoid inappropriate content
+
+Solve the given math problem step by step. 
 
 For multiple choice questions:
 - Identify the correct answer choice (A, B, C, D, or E)
@@ -652,6 +694,98 @@ ${problemData.explanation}
       content: step,
       animation: 'fadeIn'
     }));
+  }
+
+  // Child Safety Content Filter - checks content BEFORE sending to AI
+  isContentAppropriate(selectedText, imageData) {
+    // Special handling for image-only content (screenshots)
+    if (imageData && (!selectedText || selectedText.trim().length === 0 || 
+        selectedText.includes('Math problem from') || selectedText.includes('uploaded image:'))) {
+      // For image-only content, we allow it but add extra logging
+      console.log('🖼️ Image-only content detected - proceeding with enhanced AI filtering');
+      return { 
+        isAppropriate: true, 
+        reason: 'Image content - relying on AI safety prompts for filtering' 
+      };
+    }
+
+    if (!selectedText || selectedText.trim().length === 0) {
+      return { isAppropriate: false, reason: 'No text content to analyze' };
+    }
+
+    const text = selectedText.toLowerCase().trim();
+
+    // Keywords that indicate mathematical content
+    const mathKeywords = [
+      // Numbers and basic math
+      'calculate', 'solve', 'find', 'equation', 'expression', 'formula',
+      'add', 'subtract', 'multiply', 'divide', 'sum', 'difference', 'product', 'quotient',
+      'equals', 'equal', '=', '+', '-', '×', '÷', '*', '/', '^', '²', '³',
+      
+      // Mathematical concepts
+      'algebra', 'geometry', 'calculus', 'trigonometry', 'statistics', 'probability',
+      'function', 'variable', 'coefficient', 'constant', 'slope', 'intercept',
+      'derivative', 'integral', 'limit', 'matrix', 'vector', 'polynomial',
+      
+      // Geometric terms
+      'angle', 'triangle', 'circle', 'square', 'rectangle', 'polygon', 'radius', 'diameter',
+      'perimeter', 'area', 'volume', 'circumference', 'hypotenuse', 'parallel', 'perpendicular',
+      
+      // Units and measurements
+      'meter', 'centimeter', 'inch', 'foot', 'yard', 'gram', 'kilogram', 'liter',
+      'degree', 'radian', 'percent', '%', 'ratio', 'proportion',
+      
+      // Mathematical symbols and concepts
+      'π', 'pi', 'sqrt', 'square root', 'log', 'logarithm', 'sin', 'cos', 'tan',
+      'prime', 'factor', 'multiple', 'fraction', 'decimal', 'integer', 'rational'
+    ];
+
+    // Check for mathematical indicators
+    const hasNumbers = /\d/.test(text);
+    const hasMathSymbols = /[=+\-×÷*/^²³√π%]/.test(text);
+    const hasMathKeywords = mathKeywords.some(keyword => text.includes(keyword));
+    const hasQuestionMark = text.includes('?');
+
+    // Strong indicators of math content
+    if (hasMathSymbols || (hasNumbers && hasMathKeywords)) {
+      return { isAppropriate: true, reason: 'Contains mathematical symbols or math keywords with numbers' };
+    }
+
+    // Check for mathematical expressions (even without keywords)
+    const mathPatterns = [
+      /\d+\s*[+\-×÷*/^=]\s*\d+/,  // Basic arithmetic expressions
+      /[a-z]\s*[=+\-×÷*/^]\s*\d+/i, // Variable equations
+      /\d+\s*[a-z]/i,              // Coefficients with variables
+      /\([^)]*\)\s*[+\-×÷*/^]/,    // Expressions with parentheses
+      /\d+\s*°/,                   // Angle measurements
+      /\d+\s*(cm|mm|m|ft|in|kg|g|l|ml)/i, // Units
+    ];
+
+    if (mathPatterns.some(pattern => pattern.test(text))) {
+      return { isAppropriate: true, reason: 'Contains mathematical expressions or patterns' };
+    }
+
+    // Content that's clearly educational math (even without symbols)
+    const mathPhrases = [
+      'word problem', 'math problem', 'solve for', 'what is', 'how many', 'how much',
+      'find the value', 'calculate the', 'determine the', 'compute the',
+      'if x =', 'when x =', 'given that', 'let x be'
+    ];
+
+    if (mathPhrases.some(phrase => text.includes(phrase)) && hasNumbers) {
+      return { isAppropriate: true, reason: 'Contains math problem phrases with numbers' };
+    }
+
+    // Final check: if it's a question with numbers, it might be math
+    if (hasQuestionMark && hasNumbers && text.split(' ').length < 50) {
+      return { isAppropriate: true, reason: 'Short question with numbers (likely math)' };
+    }
+
+    // If none of the math indicators are found, reject the content
+    return { 
+      isAppropriate: false, 
+      reason: 'No mathematical content detected - missing numbers, math symbols, or math keywords' 
+    };
   }
 }
 
