@@ -6,22 +6,42 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 
 - **📐 Universal Problem Selection**: Works on any website, document, or application
 - **🔍 Smart Detection**: Automatically tries direct selection, falls back to screen capture when needed
-- **🤖 AI-Powered Solutions**: Get step-by-step solutions using OpenAI's GPT models
+- **🤖 AI-Powered Solutions**: Get step-by-step solutions using multiple AI providers (Google Gemini Free + OpenAI)
 - **🎯 Smart Model Selection**: Automatically chooses the best AI model based on problem type
 - **📋 Multiple Choice Support**: Handles both multiple choice and open-ended questions
 - **📄 Document Support**: Works seamlessly with PDFs, Google Docs, Office 365, and more
 - **📸 Screen Capture**: Built-in screen capture for restricted content and applications
+- **🔊 Audio Explanations**: Text-to-speech narration of solutions (Google TTS + OpenAI TTS)
+- **📱 Side Panel Interface**: Clean, persistent panel that stays open while working
 - **⚙️ Customizable Settings**: Choose your preferred AI model and behavior
+- **🆓 Free Option Available**: Use Google Gemini with generous free tier limits
 
 ## 🚀 Quick Setup
 
-### 1. Install the Extension
-1. Download the extension files
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable "Developer mode" (toggle in top-right corner)
-4. Click "Load unpacked" and select the extension folder
+### 1. Download and Install the Extension
 
-### 2. Get OpenAI API Key
+#### Download from GitHub:
+1. Go to the [AI Math Tutor repository](https://github.com/maheshrajamani/ai-math-tutor)
+2. Click the green **"Code"** button
+3. Select **"Download ZIP"**
+4. Extract the ZIP file to a folder on your computer
+
+#### Install in Chrome:
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **"Developer mode"** (toggle in top-right corner)
+3. Click **"Load unpacked"**
+4. Select the extracted folder containing the extension files
+5. The AI Math Tutor extension should now appear in your extensions list
+
+### 2. Choose Your AI Provider
+
+#### Option A: Google Gemini (Free) 🆓
+1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account  
+3. Click "Create API Key" and copy it
+4. The free tier includes generous usage limits!
+
+#### Option B: OpenAI (Paid)
 1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Sign up or log in to your OpenAI account
 3. Create a new API key
@@ -30,9 +50,11 @@ An intelligent Chrome extension that helps you solve math problems with AI-power
 ### 3. Configure the Extension
 1. Click the extension icon in Chrome
 2. Click the ⚙️ Settings button
-3. Enter your OpenAI API key
-4. Click "Save API Key"
-5. Test the connection to verify it works
+3. Choose your AI Provider:
+   - **Google Gemini**: Select "Google" and enter your API key
+   - **OpenAI**: Select "OpenAI" and enter your API key
+4. Choose your preferred model (or leave on "Auto")
+5. Click "Save Settings" and "Test Connection" to verify
 
 ## 📖 How to Use
 
@@ -99,7 +121,18 @@ ai-tutor/
 
 The extension supports multiple AI providers:
 
-- **OpenAI GPT-4 Vision** (Recommended) - Excellent for math + image processing
+- **Google Gemini** (Free) - Free tier with generous limits, excellent vision and reasoning
+  - Gemini 2.0 Flash: Latest model with best performance and reasoning ⭐
+  - Gemini 1.5 Flash: Fast and efficient for most problems
+  - Gemini 1.5 Pro: Advanced reasoning for complex problems  
+  - Gemini 1.0 Pro: Text-only for simple problems
+  - **Audio**: Free Google Text-to-Speech for explanations 🔊
+- **OpenAI GPT-4 Vision** (Paid) - Excellent for math + image processing
+  - GPT-4o: Best for complex problems with images
+  - GPT-4o Mini: Fast and cost-effective
+  - GPT-4 Vision: Good for image analysis
+  - GPT-4: Text-only, high quality
+  - **Audio**: OpenAI Text-to-Speech for explanations 🔊
 - **Claude** (Coming Soon) - Strong reasoning capabilities
 
 ### Customization
@@ -159,6 +192,14 @@ Edit `config.js` to modify:
 
 ## 💰 Cost Information
 
+### Google Gemini (Free Tier) 🆓
+- **All models**: FREE with generous daily limits
+- **Gemini 1.5 Flash**: Up to 15 RPM (requests per minute)
+- **Gemini 1.5 Pro**: Up to 2 RPM
+- **Perfect for students**: No payment required!
+- **Verify current limits**: [Check official pricing](https://ai.google.dev/gemini-api/docs/pricing)
+
+### OpenAI (Paid Usage)
 **Problem Solving (approximate costs based on tokens used):**
 - **GPT-4o-mini**: ~$0.0001 per problem (very affordable)
 - **GPT-4o**: ~$0.001 per problem (for complex diagrams)
@@ -175,29 +216,37 @@ Edit `config.js` to modify:
 **$5 credit**: Handles 6,000+ problems with audio or 50,000+ text-only problems
 
 *Note: Costs are approximate and vary based on problem complexity and token usage*
-- **Auto mode**: Smartly chooses the most cost-effective model
 
 ## 🛠️ Settings
 
-- **Auto** (recommended): Smart model selection based on problem type
-- **GPT-4o-mini**: Fast and very cost-effective for most math problems
-- **GPT-4o**: Best for problems with complex diagrams and images
-- **GPT-4 Vision**: Alternative vision model for image-based problems
-- **GPT-4**: Standard text-only model
+### AI Provider Options
+- **Google Gemini** (Free): Choose from 2.0 Flash, 1.5 Flash, 1.5 Pro, or 1.0 Pro models
+- **OpenAI** (Paid): Choose from GPT-4o, GPT-4o Mini, GPT-4 Vision, or GPT-4
+
+### Model Selection
+- **Auto** (recommended): Smart model selection based on problem type and content
+- **Manual**: Choose specific models for consistent behavior
+- **Vision Support**: Automatically uses vision-capable models when images are present
 
 ## 🔒 Privacy & Security
 
-- **Your API key stays local**: Never shared or transmitted to anyone except OpenAI
+- **Your API key stays local**: Never shared or transmitted to anyone except your chosen AI provider
 - **No data collection**: We don't store or track your math problems
 - **Local processing**: All selection and image processing happens in your browser
-- **OpenAI only**: Your problems are only sent to OpenAI's secure servers
+- **Secure transmission**: Your problems are only sent to your chosen provider's secure servers (Google AI or OpenAI)
+- **Optional authentication**: Use Google sign-in or API keys based on your preference
 
 ## ❓ Troubleshooting
 
-**"Check your OpenAI API key"**
-- Verify your API key is entered correctly in Settings
-- Check that your OpenAI account has sufficient credits
-- Test the connection in Settings
+**"Check your API key" or authentication errors**
+- **For Google Gemini**: Verify your API key from Google AI Studio is entered correctly
+- **For OpenAI**: Verify your API key is entered correctly and has sufficient credits
+- Test the connection in Settings to verify your setup
+
+**"Rate limit exceeded"**
+- **Google Gemini**: Free tier has rate limits (15 RPM for Flash, 2 RPM for Pro)
+- **OpenAI**: Check your usage limits and billing settings
+- Wait a moment before trying again
 
 **Selection not working**
 - The extension automatically falls back to screen capture if direct selection fails

@@ -1,4 +1,11 @@
 // Content script for AI Math Tutor
+// Prevent multiple instances
+if (window.mathTutorSelector) {
+  console.log('MathProblemSelector already exists, reusing instance');
+} else {
+  console.log('Creating new MathProblemSelector instance');
+}
+
 class MathProblemSelector {
   constructor() {
     this.isSelecting = false;
@@ -159,6 +166,11 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
   }
 
   enableSelectionMode() {
+    // Store current scroll position to preserve it
+    const currentScrollX = window.scrollX;
+    const currentScrollY = window.scrollY;
+    console.log('Preserving scroll position:', { x: currentScrollX, y: currentScrollY });
+    
     // Clean up any existing selection elements first
     this.cleanup();
     
@@ -172,6 +184,14 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
     }
     
     this.isSelecting = true;
+    
+    // Restore scroll position after setup to prevent unwanted scrolling
+    setTimeout(() => {
+      if (window.scrollX !== currentScrollX || window.scrollY !== currentScrollY) {
+        console.log('Restoring scroll position from:', { x: window.scrollX, y: window.scrollY }, 'to:', { x: currentScrollX, y: currentScrollY });
+        window.scrollTo(currentScrollX, currentScrollY);
+      }
+    }, 50); // Small delay to ensure DOM is updated
   }
 
   isPDFPage() {
@@ -416,6 +436,9 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
       let imageData = null;
       
       try {
+        console.log('Capturing screenshot at scroll position:', { x: window.scrollX, y: window.scrollY });
+        console.log('Selection rect (viewport coords):', rect);
+        
         // Request full screenshot from background script
         const response = await chrome.runtime.sendMessage({
           type: 'CAPTURE_FULL_SCREENSHOT'
@@ -952,6 +975,8 @@ Extracted text: "${extractedText.substring(0, 200)}"`);
   }
 }
 
-// Initialize the selector
-const mathTutorSelector = new MathProblemSelector();
-window.mathTutorSelector = mathTutorSelector;
+// Initialize the selector only if it doesn't exist
+if (!window.mathTutorSelector) {
+  const mathTutorSelector = new MathProblemSelector();
+  window.mathTutorSelector = mathTutorSelector;
+}

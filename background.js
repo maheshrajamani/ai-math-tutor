@@ -66,7 +66,11 @@ class MathTutorBackground {
               const result = await this.explainProblem(request.problemData);
               sendResponse(result);
               break;
-            case 'SET_API_KEY':
+            case 'SET_AI_CONFIG':
+              await this.setAIConfig(request.provider, request.model, request.apiKey);
+              sendResponse({ success: true });
+              break;
+            case 'SET_API_KEY': // Keep for backward compatibility
               await this.setApiKey(request.apiKey, request.provider);
               sendResponse({ success: true });
               break;
@@ -91,7 +95,7 @@ class MathTutorBackground {
       };
 
       // For async operations, we need to return true and call sendResponse later
-      if (['PROCESS_MATH_PROBLEM', 'OPEN_SIDE_PANEL', 'EXPLAIN_PROBLEM', 'SET_API_KEY', 'CAPTURE_FULL_SCREENSHOT'].includes(request.type)) {
+      if (['PROCESS_MATH_PROBLEM', 'OPEN_SIDE_PANEL', 'EXPLAIN_PROBLEM', 'SET_AI_CONFIG', 'SET_API_KEY', 'CAPTURE_FULL_SCREENSHOT'].includes(request.type)) {
         handleAsync();
         return true; // Keep message channel open for async response
       }
@@ -171,34 +175,75 @@ class MathTutorBackground {
       // Fallback to mock response if AI service fails
       console.error('AI service failed, using fallback:', error);
       console.error('Error details:', error.message, error.stack);
-      return this.getFallbackSolution(imageData, selectedText);
+      return await this.getFallbackSolution(imageData, selectedText);
     }
   }
 
-  getFallbackSolution(imageData, selectedText) {
+  async getFallbackSolution(imageData, selectedText) {
     // Fallback solution when AI service is not available
     console.error('CRITICAL: AI API completely failed - this should not happen with correct setup');
     console.error('Fallback received text:', selectedText?.substring(0, 200));
+    
+    // Get current provider to show appropriate error messages
+    const settings = await chrome.storage.local.get(['aiProvider']);
+    const provider = settings.aiProvider || 'openai';
+    
+    console.error('Current provider:', provider);
     console.error('This means either:');
-    console.error('1. OpenAI API key is invalid/missing');
-    console.error('2. OpenAI API is down');
-    console.error('3. Network connectivity issue');
-    console.error('4. Insufficient API credits');
+    if (provider === 'google') {
+      console.error('1. Google Gemini API key is invalid/missing');
+      console.error('2. Google AI Studio API is down');
+      console.error('3. Network connectivity issue');
+      console.error('4. API quota exceeded');
+    } else {
+      console.error('1. OpenAI API key is invalid/missing');
+      console.error('2. OpenAI API is down');
+      console.error('3. Network connectivity issue');
+      console.error('4. Insufficient API credits');
+    }
+    
+    // Provider-specific error messages
+    let steps, explanation;
+    if (provider === 'google') {
+      steps = [
+        '🔑 Check your Gemini API key in Settings',
+        '🌐 Verify your Google AI Studio access',
+        '📡 Check your internet connection',
+        '🔄 Try refreshing the page and selecting again'
+      ];
+      explanation = 'The Google Gemini AI service failed to process this problem. Please check your API key and try again.';
+    } else {
+      steps = [
+        '🔑 Check your OpenAI API key in Settings',
+        '💳 Verify you have sufficient API credits',
+        '🌐 Check your internet connection',
+        '🔄 Try refreshing the page and selecting again'
+      ];
+      explanation = 'The OpenAI service failed to process this problem. This extension requires a valid OpenAI API key with sufficient credits to solve math problems.';
+    }
     
     return {
       type: 'error',
       problem: selectedText || 'Mathematical problem from image',
       solution: '⚠️ AI Service Unavailable',
-      steps: [
-        '🔑 Check your OpenAI API key in Settings',
-        '💳 Verify you have sufficient API credits',
-        '🌐 Check your internet connection',
-        '🔄 Try refreshing the page and selecting again'
-      ],
-      explanation: 'The AI service failed to process this problem. This extension requires a valid OpenAI API key with sufficient credits to solve math problems.',
+      steps: steps,
+      explanation: explanation,
       usedVision: false,
       isError: true
     };
+  }
+
+  async setAIConfig(provider, model, apiKey) {
+    const config = {
+      aiProvider: provider,
+      aiModel: model
+    };
+    
+    if (provider === 'openai' && apiKey) {
+      config.aiApiKey = apiKey;
+    }
+    
+    await chrome.storage.local.set(config);
   }
 
   async setApiKey(apiKey, provider = 'openai') {
@@ -275,8 +320,9 @@ class MathTutorBackground {
           func: () => {
             // Force a reflow to ensure everything is rendered
             document.body.offsetHeight;
-            // Scroll to top to ensure consistent capture
-            window.scrollTo(0, 0);
+            // Log current scroll position to verify it's preserved
+            console.log('Taking screenshot at scroll position:', { x: window.scrollX, y: window.scrollY });
+            // Note: Removed scroll to top to preserve user's current scroll position
           }
         });
         console.log('Page layout refreshed');

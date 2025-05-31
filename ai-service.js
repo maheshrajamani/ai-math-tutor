@@ -10,17 +10,36 @@ class AIService {
 
   async initialize() {
     // Get API key and settings from Chrome storage
-    const result = await chrome.storage.local.get(['aiApiKey', 'aiProvider', 'useVision']);
+    const result = await chrome.storage.local.get([
+      'aiApiKey', 'aiProvider', 'aiModel', 'useVision', 
+      'googleAuthToken', 'geminiApiKey'
+    ]);
     this.apiKey = result.aiApiKey;
     this.provider = result.aiProvider || 'openai';
+    this.model = result.aiModel || 'auto';
     this.useVision = result.useVision || 'auto';
+    this.googleAuthToken = result.googleAuthToken;
+    this.geminiApiKey = result.geminiApiKey;
+    
+    console.log('AI Service initialized with:');
+    console.log('- Provider:', this.provider);
+    console.log('- Model:', this.model);
+    console.log('- Has OpenAI key:', !!this.apiKey);
+    console.log('- Has Gemini key:', !!this.geminiApiKey);
+    console.log('- Has Google token:', !!this.googleAuthToken);
   }
 
   async solveMathProblem(imageData, selectedText) {
     await this.initialize();
 
-    if (!this.apiKey) {
-      throw new Error('API key not configured. Please set your OpenAI API key in the extension settings.');
+    // Check authentication based on provider
+    if (this.provider === 'openai' && !this.apiKey) {
+      throw new Error('OpenAI API key not configured. Please set your OpenAI API key in the extension settings.');
+    } else if (this.provider === 'google' && !this.googleAuthToken && !this.geminiApiKey) {
+      console.error('Google authentication check failed:');
+      console.error('- geminiApiKey:', !!this.geminiApiKey);
+      console.error('- googleAuthToken:', !!this.googleAuthToken);
+      throw new Error('Google authentication not configured. Please sign in with Google or set your Gemini API key in the extension settings.');
     }
 
     // Child Safety: Pre-filter content before sending to AI
@@ -56,6 +75,8 @@ class AIService {
       switch (this.provider) {
         case 'openai':
           return await this.solveWithOpenAI(imageData, selectedText);
+        case 'google':
+          return await this.solveWithGemini(imageData, selectedText);
         case 'claude':
           return await this.solveWithClaude(imageData, selectedText);
         default:
@@ -586,10 +607,266 @@ Always format your response as JSON with these exact fields:
     }
   }
 
+  async solveWithGemini(imageData, selectedText) {
+    const modelChoice = this.decideGeminiModel(imageData, selectedText);
+    console.log('Using Gemini model:', modelChoice);
+    
+    const isVisionCapable = ['gemini-2.5-flash-preview-05-20', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro'].includes(modelChoice);
+    
+    if (imageData && !isVisionCapable) {
+      // Fall back to vision-capable model if we have an image
+      return await this.callGeminiAPI('gemini-2.5-flash-preview-05-20', imageData, selectedText);
+    }
+    
+    return await this.callGeminiAPI(modelChoice, imageData, selectedText);
+  }
+
+  decideGeminiModel(imageData, selectedText) {
+    if (this.model !== 'auto') {
+      return this.model;
+    }
+    
+    // Smart auto selection for Gemini - prioritize 2.5 Flash as it's the latest and best
+    if (!imageData) {
+      return 'gemini-2.5-flash-preview-05-20'; // Use 2.5 Flash even for text-only as it's better
+    }
+    
+    // Check if this is an uploaded image
+    const isUploadedImage = selectedText && selectedText.includes('uploaded image:');
+    
+    if (isUploadedImage) {
+      return 'gemini-2.5-flash-preview-05-20'; // Use latest model for uploaded images
+    }
+    
+    // Check if text extraction seems complete
+    const hasGoodText = selectedText && 
+                       selectedText.length > 30 && 
+                       selectedText.includes('?') &&
+                       selectedText.split(' ').length > 8;
+    
+    if (hasGoodText) {
+      return 'gemini-2.5-flash-preview-05-20'; // Use latest model for good text
+    } else {
+      return 'gemini-2.5-flash-preview-05-20'; // Use latest model for complex vision tasks
+    }
+  }
+
+  async callGeminiAPI(model, imageData, selectedText) {
+    try {
+      // Build the request URL and headers
+      const apiKey = this.geminiApiKey;
+      let url;
+      let headers = { 'Content-Type': 'application/json' };
+      
+      console.log('Calling Gemini API with model:', model);
+      
+      if (apiKey) {
+        // Use API key authentication
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        console.log('Using API key authentication');
+      } else if (this.googleAuthToken) {
+        // Use OAuth token
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        headers['Authorization'] = `Bearer ${this.googleAuthToken}`;
+        console.log('Using OAuth token authentication');
+      } else {
+        throw new Error('No valid authentication method for Gemini API');
+      }
+
+      // Build the request payload
+      const payload = {
+        contents: [{
+          parts: this.buildGeminiPrompt(imageData, selectedText, model)
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          topK: 32,
+          topP: 1,
+          maxOutputTokens: 2048,
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH", 
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          }
+        ]
+      };
+
+      console.log('Making Gemini API call to:', url);
+      console.log('Payload:', JSON.stringify(payload, null, 2));
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Gemini API Error:', errorText);
+        
+        if (response.status === 401) {
+          throw new Error('Invalid Gemini API key or expired Google token. Please check your authentication.');
+        } else if (response.status === 404) {
+          throw new Error('The selected Gemini model is not available. Please check the console for details and try a different model in Settings.');
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait a moment before trying again.');
+        } else {
+          throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('Gemini API response:', data);
+
+      if (!data.candidates || !data.candidates[0]) {
+        console.error('No candidates in Gemini API response:', data);
+        throw new Error('Invalid response from Gemini API - no candidates returned');
+      }
+
+      const candidate = data.candidates[0];
+      console.log('Candidate structure:', candidate);
+
+      // Check if content was blocked by safety filters
+      if (candidate.finishReason === 'SAFETY') {
+        console.error('Content blocked by Gemini safety filters:', candidate);
+        throw new Error('Content was blocked by safety filters. Please try rephrasing your math problem.');
+      }
+
+      if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0]) {
+        console.error('Invalid content structure:', candidate);
+        if (candidate.finishReason) {
+          throw new Error(`Gemini API returned no content. Finish reason: ${candidate.finishReason}`);
+        }
+        throw new Error('Invalid response from Gemini API - no content parts');
+      }
+
+      const textPart = candidate.content.parts[0];
+      if (!textPart.text) {
+        console.error('No text in content part:', textPart);
+        throw new Error('Invalid response from Gemini API - no text content');
+      }
+      
+      const content = textPart.text;
+      
+      try {
+        // Try to parse as JSON first
+        let cleanContent = content.trim();
+        if (cleanContent.startsWith('```json')) {
+          cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (cleanContent.startsWith('```')) {
+          cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        
+        const result = JSON.parse(cleanContent);
+        result.usedVision = imageData ? true : false;
+        result.modelUsed = `Gemini ${model}`;
+        return result;
+      } catch (e) {
+        console.error('Failed to parse JSON from Gemini response:', e);
+        console.error('Original content:', content);
+        // If not JSON, create a structured response
+        const result = this.parseUnstructuredResponse(content, selectedText || 'Math problem from image');
+        result.usedVision = imageData ? true : false;
+        result.modelUsed = `Gemini ${model}`;
+        return result;
+      }
+
+    } catch (error) {
+      console.error('Error calling Gemini API:', error);
+      throw error;
+    }
+  }
+
+  buildGeminiPrompt(imageData, selectedText, model) {
+    const parts = [];
+    
+    // Add system instruction
+    const systemPrompt = `You are a math tutor designed for children. Focus on mathematical problems and educational content.
+
+CHILD-FRIENDLY GUIDELINES:
+- Use age-appropriate language suitable for students
+- If the content is not a math problem, please respond: "I am not aware of what you are asking"
+- Maintain educational focus and avoid inappropriate content
+
+CRITICAL INSTRUCTIONS:
+- For geometry problems (circles, triangles, etc.), pay careful attention to π symbols and geometric formulas
+- Circle area = πr² (where r is radius, and radius = diameter ÷ 2)
+- If you see numerical options like "8, 16, 64, 128, 256" for a circle area problem, these likely have π units
+
+For multiple choice questions:
+- Look at any image for diagrams, graphs, or visual elements, especially π symbols
+- Work through the problem step by step to get the numerical answer FIRST
+- AFTER calculating, look at ALL the given options (A, B, C, D, E) carefully
+- Find which option matches your calculated answer EXACTLY
+- Format solution as "The answer is [LETTER]: [CALCULATED_VALUE]" 
+- CRITICAL: The value after the colon must be your calculated answer, which should match one of the given options
+- Double-check that your selected option letter corresponds to the value you calculated
+
+For non-multiple choice:
+- Provide the numerical or algebraic answer
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON, no markdown code blocks or extra text
+- For multiple choice: solution field must be "The answer is [LETTER]: [CALCULATED_VALUE]" 
+- Steps should be clean sentences without numbering (numbering will be added automatically)
+- USE HUMAN-READABLE MATH SYMBOLS: √ instead of sqrt(), ² ³ instead of ^2 ^3, π instead of pi, × instead of *, ÷ instead of /, ± instead of +/-, ≤ ≥ instead of <= >=, ≠ instead of !=, ∞ instead of infinity, use ½ ¼ ¾ or "3/4" instead of frac{3}{4}
+
+Response format:
+{
+  "problem": "the question text",
+  "solution": "final answer with letter choice if multiple choice",
+  "steps": ["step without number", "another step without number"],
+  "explanation": "brief concept explanation",
+  "type": "multiple_choice" or "open_ended"
+}`;
+
+    parts.push({ text: systemPrompt });
+
+    // Add the user's text prompt
+    if (selectedText) {
+      parts.push({ 
+        text: `I've selected this math problem. The extracted text is: "${selectedText}". ${imageData ? 'Please also analyze the image carefully for any mathematical notation, diagrams, or symbols that might be missing from the text extraction.' : 'Please solve this step by step.'}`
+      });
+    } else if (imageData) {
+      parts.push({ 
+        text: 'Please solve this math problem from the image. Look for the question, any diagrams, mathematical symbols (especially π), and multiple choice options if present.'
+      });
+    }
+
+    // Add image if present and model supports it
+    if (imageData && ['gemini-2.5-flash-preview-05-20', 'gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro'].includes(model)) {
+      // Convert data URL to base64
+      const base64Data = imageData.split(',')[1];
+      const mimeType = imageData.split(',')[0].split(':')[1].split(';')[0];
+      
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    }
+
+    return parts;
+  }
+
   async solveWithClaude(imageData, selectedText) {
     // Claude implementation would go here
     // For now, return a placeholder
-    throw new Error('Claude integration not yet implemented. Please use OpenAI for now.');
+    throw new Error('Claude integration not yet implemented. Please use OpenAI or Google for now.');
   }
 
   parseUnstructuredResponse(content, originalText) {
@@ -649,14 +926,152 @@ Always format your response as JSON with these exact fields:
     return 'general';
   }
 
+  async generateExplanationAudio(problemData) {
+    try {
+      const audioScript = this.generateAudioScript(problemData);
+      
+      if (this.provider === 'google') {
+        return await this.generateGoogleTTS(audioScript);
+      } else if (this.provider === 'openai') {
+        return await this.generateOpenAITTS(audioScript);
+      } else {
+        throw new Error(`TTS not supported for provider: ${this.provider}`);
+      }
+    } catch (error) {
+      console.error('Error generating audio explanation:', error);
+      throw error;
+    }
+  }
+
+  async generateGoogleTTS(text) {
+    try {
+      const apiKey = this.geminiApiKey;
+      let headers = { 'Content-Type': 'application/json' };
+      let url = CONFIG.GOOGLE_TTS.API_URL;
+      
+      if (apiKey) {
+        url += `?key=${apiKey}`;
+      } else if (this.googleAuthToken) {
+        headers['Authorization'] = `Bearer ${this.googleAuthToken}`;
+      } else {
+        throw new Error('No valid authentication for Google TTS');
+      }
+
+      const payload = {
+        input: { text: text },
+        voice: {
+          languageCode: 'en-US',
+          name: CONFIG.TTS.GOOGLE.DEFAULT_VOICE,
+          ssmlGender: 'FEMALE'
+        },
+        audioConfig: {
+          audioEncoding: 'MP3',
+          speakingRate: 1.0,
+          pitch: 0.0,
+          volumeGainDb: 0.0
+        }
+      };
+
+      console.log('Making Google TTS API call');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Google TTS API Error:', errorText);
+        throw new Error(`Google TTS API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.audioContent) {
+        throw new Error('No audio content in Google TTS response');
+      }
+
+      // Convert base64 audio to data URL
+      const audioDataUrl = `data:audio/mp3;base64,${data.audioContent}`;
+      
+      return {
+        audioUrl: audioDataUrl,
+        audioData: data.audioContent,
+        provider: 'google',
+        voice: CONFIG.TTS.GOOGLE.DEFAULT_VOICE,
+        text: text
+      };
+
+    } catch (error) {
+      console.error('Error generating Google TTS:', error);
+      throw error;
+    }
+  }
+
+  async generateOpenAITTS(text) {
+    try {
+      if (!this.apiKey) {
+        throw new Error('OpenAI API key required for TTS');
+      }
+
+      const payload = {
+        model: CONFIG.TTS.OPENAI.MODEL,
+        input: text,
+        voice: CONFIG.TTS.OPENAI.DEFAULT_VOICE,
+        response_format: CONFIG.TTS.OPENAI.FORMAT
+      };
+
+      console.log('Making OpenAI TTS API call');
+      const response = await fetch(CONFIG.TTS.OPENAI.API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI TTS API Error:', errorText);
+        throw new Error(`OpenAI TTS API error (${response.status}): ${errorText}`);
+      }
+
+      // OpenAI returns audio data directly
+      const audioArrayBuffer = await response.arrayBuffer();
+      const audioBlob = new Blob([audioArrayBuffer], { type: 'audio/mpeg' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      return {
+        audioUrl: audioUrl,
+        audioBlob: audioBlob,
+        provider: 'openai',
+        voice: CONFIG.TTS.OPENAI.DEFAULT_VOICE,
+        text: text
+      };
+
+    } catch (error) {
+      console.error('Error generating OpenAI TTS:', error);
+      throw error;
+    }
+  }
+
   async generateExplanationVideo(problemData) {
     // This would integrate with video generation services
-    // For now, return a mock response
+    // For now, return a mock response with audio generation
     await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    let audioData = null;
+    try {
+      audioData = await this.generateExplanationAudio(problemData);
+    } catch (error) {
+      console.warn('Audio generation failed:', error);
+    }
     
     return {
       videoScript: this.generateVideoScript(problemData),
       audioScript: this.generateAudioScript(problemData),
+      audioData: audioData,
       visualCues: this.generateVisualCues(problemData)
     };
   }

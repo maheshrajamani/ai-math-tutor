@@ -9,7 +9,8 @@
     "sidePanel",
     "notifications",
     "scripting",
-    "tabs"
+    "tabs",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -20,7 +21,7 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "options_page": "options.html",
+  "options_page": "settings.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

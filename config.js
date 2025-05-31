@@ -15,6 +15,90 @@ const CONFIG = {
     MAX_TOKENS: 1000
   },
 
+  // Google Gemini Configuration
+  GEMINI: {
+    API_URL: 'https://generativelanguage.googleapis.com/v1beta/models',
+    AUTH_URL: 'https://oauth2.googleapis.com/token',
+    SCOPES: ['https://www.googleapis.com/auth/cloud-platform'],
+    MODELS: {
+      'gemini-2.5-flash-preview-05-20': {
+        name: 'Gemini 2.5 Flash',
+        description: 'Latest preview model - use for very complex problems',
+        supportsVision: true,
+        recommended: true
+      },
+      'gemini-2.0-flash-exp': {
+        name: 'Gemini 2.0 Flash',
+        description: 'High performance model - best for most problems',
+        supportsVision: true
+      },
+      'gemini-1.5-flash': {
+        name: 'Gemini 1.5 Flash',
+        description: 'Fast and efficient for most math problems',
+        supportsVision: true
+      },
+      'gemini-1.5-pro': {
+        name: 'Gemini 1.5 Pro',
+        description: 'Advanced reasoning for complex problems',
+        supportsVision: true
+      },
+      'gemini-1.0-pro': {
+        name: 'Gemini 1.0 Pro',
+        description: 'Text-only model for simple problems',
+        supportsVision: false
+      }
+    }
+  },
+
+  // Google Text-to-Speech Configuration
+  GOOGLE_TTS: {
+    API_URL: 'https://texttospeech.googleapis.com/v1/text:synthesize',
+    VOICES: {
+      'en-US-Neural2-A': {
+        name: 'US English Female (Neural)',
+        languageCode: 'en-US',
+        gender: 'FEMALE',
+        recommended: true
+      },
+      'en-US-Neural2-C': {
+        name: 'US English Male (Neural)',
+        languageCode: 'en-US', 
+        gender: 'MALE'
+      },
+      'en-US-Standard-A': {
+        name: 'US English Female (Standard)',
+        languageCode: 'en-US',
+        gender: 'FEMALE'
+      },
+      'en-US-Standard-B': {
+        name: 'US English Male (Standard)',
+        languageCode: 'en-US',
+        gender: 'MALE'
+      }
+    },
+    AUDIO_CONFIG: {
+      audioEncoding: 'MP3',
+      speakingRate: 1.0,
+      pitch: 0.0,
+      volumeGainDb: 0.0
+    }
+  },
+
+  // Text-to-Speech Configuration
+  TTS: {
+    OPENAI: {
+      API_URL: 'https://api.openai.com/v1/audio/speech',
+      VOICES: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
+      MODEL: 'tts-1',
+      DEFAULT_VOICE: 'nova',
+      FORMAT: 'mp3'
+    },
+    GOOGLE: {
+      // Uses GOOGLE_TTS config above
+      DEFAULT_VOICE: 'en-US-Neural2-A'
+    }
+  },
+
   // For video generation (placeholder - would use services like D-ID, Synthesia, etc.)
   VIDEO_GENERATION: {
     PROVIDER: 'custom', // 'dideo', 'synthesia', 'custom'

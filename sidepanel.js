@@ -55,6 +55,9 @@ class MathTutorSidePanel {
               files: ['content.js']
             });
             
+            // Small delay to ensure script is loaded before enabling selection
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             // Try to enable selection mode
             await chrome.tabs.sendMessage(tab.id, { type: 'ENABLE_SELECTION' });
             this.showStatus('✅ Direct selection enabled! Click and drag to select a math problem.', 'success');
@@ -321,14 +324,14 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
       <div class="solution-container">
         <div class="solution-header">
           <h3>✅ Solution</h3>
-          <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+          <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px; flex-wrap: wrap;">
             <span style="color: #34a853; font-size: 12px;">● Completed</span>
             <span style="color: #666; font-size: 11px; background: #f1f3f4; padding: 2px 6px; border-radius: 3px;">
-              ${problem.solution.modelUsed === 'GPT-4o' ? '🚀 GPT-4o' :
-                (problem.solution.modelUsed === 'GPT-4V Vision' ? '👁️ GPT-4V Vision' : 
-                 (problem.solution.modelUsed === 'GPT-4o-mini' ? '⚡ GPT-4o-mini' : 
-                  problem.solution.modelUsed === 'GPT-4' ? '📝 GPT-4' : '📝 Text Model'))}
+              ${this.getModelDisplayName(problem.solution.modelUsed)}
             </span>
+            ${problem.audioModel ? `<span style="color: #666; font-size: 11px; background: #f1f3f4; padding: 2px 6px; border-radius: 3px;">
+              ${problem.audioModel}
+            </span>` : ''}
           </div>
         </div>
         
@@ -350,8 +353,8 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
         </div>
         
         <div style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
-          <button class="btn btn-primary" data-action="explain">
-            ▶️
+          <button class="btn btn-primary" data-action="explain" title="Generate Audio Explanation">
+            🔊 Audio Explanation
           </button>
           <button class="btn btn-secondary" data-action="copy" style="padding: 8px 12px; font-size: 16px;" title="Copy">
             📋
@@ -745,33 +748,54 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
   }
 
   async generateDetailedAudioExplanation() {
-    // Get API key
-    const result = await chrome.storage.local.get(['aiApiKey']);
-    const apiKey = result.aiApiKey;
+    // Get provider and authentication info
+    const result = await chrome.storage.local.get([
+      'aiProvider', 'aiApiKey', 'geminiApiKey', 'googleAuthToken'
+    ]);
     
-    if (!apiKey) {
+    const provider = result.aiProvider || 'openai';
+    
+    // Check authentication based on provider
+    if (provider === 'openai' && !result.aiApiKey) {
       throw new Error('OpenAI API key required for audio explanation');
+    } else if (provider === 'google' && !result.geminiApiKey && !result.googleAuthToken) {
+      throw new Error('Google authentication required for audio explanation');
     }
 
     // Update progress
     this.updateRealProgress('🤔 Creating detailed explanation script...', 20);
 
-    // Create detailed explanation script
-    const explanationScript = await this.createDetailedExplanationScript();
+    // Create detailed explanation script and get model info
+    const scriptResult = await this.createDetailedExplanationScript();
+    const explanationScript = scriptResult.script;
+    const transcriptModelUsed = scriptResult.modelUsed;
     
-    // Update progress
-    this.updateRealProgress('🎤 Generating high-quality audio narration...', 60);
+    // Update progress - both providers now use Browser TTS
+    this.updateRealProgress('🎤 Setting up Browser Speech Synthesis...', 60);
 
-    // Generate audio using OpenAI TTS
-    const audioBlob = await this.generateOpenAIAudio(explanationScript, apiKey);
+    // Generate audio using Browser TTS (same for both providers)
+    let audioResult;
+    if (provider === 'google') {
+      audioResult = await this.generateGoogleAudio(explanationScript, result.geminiApiKey, result.googleAuthToken);
+    } else {
+      // Use Browser TTS for OpenAI as well (no cost, works great)
+      audioResult = await this.generateBrowserTTSAudio(explanationScript);
+    }
     
     // Update progress
     this.updateRealProgress('✅ Audio explanation complete!', 100);
 
     return {
-      audioUrl: URL.createObjectURL(audioBlob),
+      audioUrl: audioResult.audioUrl,
+      audioBlob: audioResult.audioBlob,
       transcript: explanationScript,
-      duration: await this.getAudioDuration(audioBlob)
+      duration: audioResult.duration || (audioResult.audioBlob ? await this.getAudioDuration(audioResult.audioBlob) : 0),
+      provider: provider,
+      audioModel: audioResult.audioModel || this.getAudioModelName(provider),
+      textModel: transcriptModelUsed || 'AI Model', // Include the model that generated the transcript
+      isBrowserTTS: audioResult.isBrowserTTS || false, // Pass through Browser TTS flag
+      speechText: audioResult.speechText, // Pass through speech text for Browser TTS
+      selectedVoice: audioResult.selectedVoice // Pass through selected voice
     };
   }
 
@@ -779,51 +803,345 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
     const problem = this.currentProblem;
     const solution = problem.solution;
 
-    // Create a detailed script that explains the reasoning
-    let script = `Hello! Let me walk you through this ${solution.type || 'math'} problem.\n\n`;
+    // Get provider info and transcript model preference
+    const result = await chrome.storage.local.get(['aiProvider', 'aiApiKey', 'geminiApiKey', 'transcriptModel']);
+    const provider = result.aiProvider || 'openai';
+    const transcriptModel = result.transcriptModel || 'auto';
 
-    // Add detailed explanation for each step
-    solution.steps.forEach((step, index) => {
+    // Prepare clean steps for AI processing
+    const cleanSteps = solution.steps.map((step, index) => {
       const cleanStep = step.replace(/^\d+\.\s*/, '').replace(/^Step\s*\d+:\s*/i, '');
+      return `Step ${index + 1}: ${cleanStep}`;
+    }).join('\n');
+
+    // Create prompt for script generation
+    const prompt = `You are a friendly math tutor creating a spoken explanation. Given this math problem and its solution steps, write ONLY the words that should be spoken aloud - no music cues, no sound effects, no production notes.
+
+Problem: ${problem.selectedText || 'Math problem from image'}
+Solution Steps:
+${cleanSteps}
+
+Final Answer: ${solution.solution}
+
+Write a spoken explanation that:
+- Starts with a friendly greeting
+- Explains each step clearly and WHY we do it
+- Uses natural, conversational language like a patient tutor
+- Ends with the final answer
+- Contains ONLY spoken words (no music, sound effects, or production notes)
+
+Make it educational and easy to understand for a ${await this.getDifficultyLevel()} student.
+
+Example format:
+"Hi there! Let's solve this math problem together. First, we need to..."
+
+DO NOT include any music cues, sound effects, or production elements. Just the spoken words.`;
+
+    try {
+      // Determine which model to use based on user preference
+      let scriptResult;
+      if (provider === 'google') {
+        scriptResult = await this.generateScriptWithGemini(prompt, result.geminiApiKey, transcriptModel);
+      } else {
+        scriptResult = await this.generateScriptWithOpenAI(prompt, result.aiApiKey, transcriptModel);
+      }
       
-      script += `Step ${index + 1}: ${cleanStep}\n`;
-      script += `The reason we do this step is because ${this.getStepReasoning(cleanStep, index, solution)}.\n\n`;
+      return {
+        script: scriptResult.script || this.createFallbackScript(solution),
+        modelUsed: scriptResult.modelUsed || '🤖 AI Model'
+      };
+    } catch (error) {
+      console.warn('AI script generation failed, using fallback:', error.message);
+      return {
+        script: this.createFallbackScript(solution),
+        modelUsed: '🤖 Fallback Script'
+      };
+    }
+  }
+
+  async getDifficultyLevel() {
+    try {
+      const result = await chrome.storage.local.get(['difficulty']);
+      const difficulty = result.difficulty || 'middle';
+      
+      // Convert setting to descriptive text
+      const difficultyMap = {
+        'elementary': 'elementary school',
+        'middle': 'middle school', 
+        'high': 'high school',
+        'college': 'college'
+      };
+      
+      return difficultyMap[difficulty] || 'middle school';
+    } catch (error) {
+      return 'middle school'; // Fallback
+    }
+  }
+
+  async generateScriptWithGemini(prompt, apiKey, transcriptModel = 'auto') {
+    // Determine which Gemini model to use
+    let modelName, modelDescription;
+    
+    if (transcriptModel === 'auto') {
+      // Auto - use 1.5 Flash for reliability
+      modelName = 'gemini-1.5-flash';
+      modelDescription = 'Gemini 1.5 Flash (auto)';
+    } else {
+      // Use the specific model selected by user
+      modelName = transcriptModel;
+      
+      // Get friendly name for display
+      const modelMap = {
+        'gemini-2.5-flash-preview-05-20': 'Gemini 2.5 Flash',
+        'gemini-2.0-flash-exp': 'Gemini 2.0 Flash', 
+        'gemini-1.5-flash': 'Gemini 1.5 Flash',
+        'gemini-1.5-pro': 'Gemini 1.5 Pro',
+        'gemini-1.0-pro': 'Gemini 1.0 Pro'
+      };
+      
+      modelDescription = modelMap[modelName] || modelName;
+    }
+    
+    console.log(`🤖 Generating script with ${modelDescription}...`);
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1000
+        }
+      })
     });
 
-    script += `Therefore, our final answer is: ${solution.solution}.`;
+    if (!response.ok) {
+      throw new Error(`Gemini script generation failed: ${response.status}`);
+    }
 
+    const result = await response.json();
+    return {
+      script: result.candidates[0]?.content?.parts[0]?.text,
+      modelUsed: `🤖 ${modelDescription}`
+    };
+  }
+
+  async generateScriptWithOpenAI(prompt, apiKey, transcriptModel = 'auto') {
+    // Determine which OpenAI model to use
+    let modelName, modelDescription;
+    
+    if (transcriptModel === 'auto') {
+      // Auto - use 3.5-turbo for cost efficiency
+      modelName = 'gpt-3.5-turbo';
+      modelDescription = 'GPT-3.5-turbo (auto)';
+    } else {
+      // Use the specific model selected by user
+      modelName = transcriptModel;
+      
+      // Get friendly name for display
+      const modelMap = {
+        'gpt-4o': 'GPT-4o',
+        'gpt-4o-mini': 'GPT-4o Mini',
+        'gpt-3.5-turbo': 'GPT-3.5-turbo'
+      };
+      
+      modelDescription = modelMap[modelName] || modelName;
+    }
+    
+    console.log(`🤖 Generating script with ${modelDescription}...`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI script generation failed: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return {
+      script: result.choices[0]?.message?.content,
+      modelUsed: `🤖 ${modelDescription}`
+    };
+  }
+
+  createFallbackScript(solution) {
+    console.log('📝 Using fallback script generation...');
+    
+    // Simple fallback without hardcoded reasoning
+    let script = `Hello! Let me walk you through this ${solution.type || 'math'} problem step by step.\n\n`;
+
+    solution.steps.forEach((step, index) => {
+      const cleanStep = step.replace(/^\d+\.\s*/, '').replace(/^Step\s*\d+:\s*/i, '');
+      script += `Step ${index + 1}: ${cleanStep}\n\n`;
+    });
+
+    script += `And that gives us our final answer: ${solution.solution}.`;
     return script;
   }
 
+  // Legacy function - now unused but kept for compatibility
   getStepReasoning(step, index, solution) {
-    const stepLower = step.toLowerCase();
+    return 'this step moves us closer to the solution';
+  }
+
+  async generateGoogleAudio(text, geminiApiKey, googleAuthToken) {
+    console.log('Setting up Browser Speech Synthesis for Google provider...');
+    console.log('Text to speak:', text.substring(0, 100) + '...');
     
-    // Common mathematical reasoning patterns
-    if (stepLower.includes('identify') || stepLower.includes('given')) {
-      return 'we need to clearly understand what information we have before we can solve the problem';
-    } else if (stepLower.includes('substitute') || stepLower.includes('replace')) {
-      return 'substitution allows us to work with known values instead of variables';
-    } else if (stepLower.includes('simplify') || stepLower.includes('combine')) {
-      return 'simplifying makes the expression easier to work with and reveals the underlying structure';
-    } else if (stepLower.includes('solve') || stepLower.includes('isolate')) {
-      return 'we need to isolate the variable to find its value';
-    } else if (stepLower.includes('multiply') || stepLower.includes('divide')) {
-      return 'this operation helps us maintain equality while getting closer to our answer';
-    } else if (stepLower.includes('add') || stepLower.includes('subtract')) {
-      return 'this arithmetic operation follows the order of operations and moves us toward the solution';
-    } else if (stepLower.includes('factor') || stepLower.includes('expand')) {
-      return 'changing the form of the expression reveals patterns that make solving easier';
-    } else if (stepLower.includes('apply') || stepLower.includes('use')) {
-      return 'we use established mathematical rules and formulas that we know are reliable';
-    } else if (stepLower.includes('check') || stepLower.includes('verify')) {
-      return 'verification ensures our answer is correct and builds confidence in our solution';
-    } else if (index === 0) {
-      return 'this sets up our problem-solving approach by organizing the information we have';
-    } else if (index === solution.steps.length - 1) {
-      return 'this final step brings together all our previous work to reach the conclusion';
-    } else {
-      return 'this builds on our previous step and moves us closer to finding the answer';
-    }
+    // Use browser's Speech Synthesis API to generate actual audio
+    return new Promise((resolve, reject) => {
+      if (!window.speechSynthesis) {
+        reject(new Error('Speech Synthesis not supported in this browser'));
+        return;
+      }
+
+      // Wait for voices to load
+      const waitForVoices = () => {
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          generateAudio(voices);
+        } else {
+          speechSynthesis.onvoiceschanged = () => {
+            const loadedVoices = speechSynthesis.getVoices();
+            generateAudio(loadedVoices);
+          };
+          // Fallback timeout
+          setTimeout(() => {
+            const fallbackVoices = speechSynthesis.getVoices();
+            generateAudio(fallbackVoices);
+          }, 1000);
+        }
+      };
+
+      const generateAudio = async (voices) => {
+        try {
+          console.log('🎤 Recording speech synthesis to audio file...');
+          
+          // Create utterance
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.rate = 0.9;
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          utterance.lang = 'en-US';
+          
+          // Select a good voice
+          const preferredVoice = voices.find(voice => 
+            voice.lang.includes('en') && (
+              voice.name.toLowerCase().includes('karen') ||
+              voice.name.toLowerCase().includes('samantha') ||
+              voice.name.toLowerCase().includes('female')
+            )
+          ) || voices.find(voice => voice.lang.includes('en')) || voices[0];
+          
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+            console.log('✅ Selected voice:', preferredVoice.name);
+          }
+
+          // Don't actually record or play speech during generation
+          // Just prepare the configuration for later use
+          console.log('✅ Returning Browser TTS configuration (no auto-play)');
+          resolve({
+            audioUrl: null, // No file, will use speech synthesis directly
+            audioBlob: null,
+            duration: Math.max(3, text.length / 12),
+            audioModel: '🔊 Browser TTS',
+            isBrowserTTS: true, // Flag to use speech synthesis controls
+            speechText: text,
+            transcript: text,
+            selectedVoice: preferredVoice // Store the selected voice
+          });
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      waitForVoices();
+    });
+  }
+
+
+  async generateBrowserTTSAudio(text) {
+    console.log('Setting up Browser Speech Synthesis...');
+    console.log('Text to speak:', text.substring(0, 100) + '...');
+    
+    // Use browser's Speech Synthesis API (same logic as Google but simpler)
+    return new Promise((resolve, reject) => {
+      if (!window.speechSynthesis) {
+        reject(new Error('Speech Synthesis not supported in this browser'));
+        return;
+      }
+
+      // Wait for voices to load
+      const waitForVoices = () => {
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          generateAudio(voices);
+        } else {
+          speechSynthesis.onvoiceschanged = () => {
+            const loadedVoices = speechSynthesis.getVoices();
+            generateAudio(loadedVoices);
+          };
+          // Fallback timeout
+          setTimeout(() => {
+            const fallbackVoices = speechSynthesis.getVoices();
+            generateAudio(fallbackVoices);
+          }, 1000);
+        }
+      };
+
+      const generateAudio = async (voices) => {
+        try {
+          // Find a good quality voice
+          const preferredVoice = voices.find(voice => 
+            voice.lang.includes('en') && (
+              voice.name.toLowerCase().includes('karen') ||
+              voice.name.toLowerCase().includes('samantha') ||
+              voice.name.toLowerCase().includes('female')
+            )
+          ) || voices.find(voice => voice.lang.includes('en')) || voices[0];
+          
+          console.log('✅ Returning Browser TTS configuration (no auto-play)');
+          
+          resolve({
+            audioUrl: null, // No file, will use speech synthesis directly
+            audioBlob: null,
+            duration: Math.max(3, text.length / 12),
+            audioModel: '🔊 Browser TTS',
+            isBrowserTTS: true, // Flag to use speech synthesis controls
+            speechText: text,
+            transcript: text,
+            selectedVoice: preferredVoice // Store the selected voice
+          });
+        } catch (error) {
+          console.error('❌ Browser TTS setup failed:', error);
+          reject(error);
+        }
+      };
+
+      waitForVoices();
+    });
   }
 
   async generateOpenAIAudio(text, apiKey) {
@@ -847,7 +1165,14 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
       throw new Error(`OpenAI TTS error: ${error.error?.message || 'Unknown error'}`);
     }
 
-    return await response.blob();
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    return {
+      audioUrl: audioUrl,
+      audioBlob: audioBlob,
+      duration: await this.getAudioDuration(audioBlob)
+    };
   }
 
   async getAudioDuration(audioBlob) {
@@ -861,39 +1186,100 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
   }
 
   displayAudioPlayer(audioResult) {
+    console.log('🎵 Displaying audio player for:', audioResult.audioModel);
+    console.log('🎵 Audio result:', audioResult);
+    console.log('🎵 Is Browser TTS:', audioResult.isBrowserTTS);
+    
+    // Store audio model info in current problem (but don't reload the page)
+    if (this.currentProblem) {
+      this.currentProblem.audioModel = audioResult.audioModel || this.getAudioModelName(audioResult.provider);
+      
+      // Update storage with audio model info
+      chrome.storage.local.set({ currentProblem: this.currentProblem });
+      
+      // Don't call loadCurrentProblem() here as it reloads the entire page
+    }
+    
     const audioProgress = document.getElementById('audioProgress');
     if (audioProgress) {
+      console.log('🎵 Found audioProgress element, replacing with audio player');
       const audioPlayerHTML = this.createAudioPlayerHTML(audioResult);
+      console.log('🎵 Audio player HTML created');
       audioProgress.outerHTML = audioPlayerHTML;
+      console.log('🎵 Progress UI replaced with audio player');
+      
+      // Initialize the audio player controls
       this.initializeAudioPlayer(audioResult);
+      console.log('🎵 Audio player initialized successfully');
+    } else {
+      console.error('❌ audioProgress element not found - cannot replace progress UI');
     }
   }
 
   createAudioPlayerHTML(audioResult) {
+    const audioModelName = audioResult.audioModel || this.getAudioModelName(audioResult.provider);
+    const textModelName = this.getModelDisplayName(audioResult.textModel);
+    
     return `
       <div class="audio-container" id="audioContainer">
         <div class="audio-header">
           <h3>🔊 Audio Explanation</h3>
           <p>Listen to a detailed walkthrough with reasoning for each step</p>
+          <div style="margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="color: #666; font-size: 11px; background: #f1f3f4; padding: 2px 6px; border-radius: 3px;">
+              ${textModelName}
+            </span>
+            <span style="color: #666; font-size: 11px; background: #f1f3f4; padding: 2px 6px; border-radius: 3px;">
+              ${audioModelName}
+            </span>
+          </div>
         </div>
         
-        <audio 
-          id="audioPlayer" 
-          class="audio-player"
-          controls
-          preload="metadata"
-          style="width: 100%; margin: 20px 0;"
-        >
-          <source src="${audioResult.audioUrl}" type="audio/mpeg">
-          Your browser does not support the audio element.
-        </audio>
+        ${audioResult.isBrowserTTS ? `
+          <div style="background: #f8f9fa; border: 1px solid #dadce0; border-radius: 8px; margin: 20px 0; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <p style="margin: 0 0 15px 0; color: #666;">Browser Speech Synthesis</p>
+              <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button id="speakBtn" class="btn btn-primary" style="font-size: 14px; padding: 10px 20px;">
+                  ▶️ Play
+                </button>
+                <button id="pauseBtn" class="btn btn-secondary" style="font-size: 14px; padding: 10px 20px; display: none;">
+                  ⏸️ Pause
+                </button>
+                <button id="resumeBtn" class="btn btn-secondary" style="font-size: 14px; padding: 10px 20px; display: none;">
+                  ▶️ Resume
+                </button>
+                <button id="stopBtn" class="btn btn-secondary" style="font-size: 14px; padding: 10px 20px; display: none;">
+                  ⏹️ Stop
+                </button>
+              </div>
+              <div id="speechStatus" style="margin-top: 10px; font-size: 12px; color: #666;">
+                Ready to play
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: #999; text-align: center;">
+              Uses your browser's speech synthesis
+            </p>
+          </div>
+        ` : `
+          <audio 
+            id="audioPlayer" 
+            class="audio-player"
+            controls
+            preload="metadata"
+            style="width: 100%; margin: 20px 0;"
+          >
+            <source src="${audioResult.audioUrl}" type="audio/mpeg">
+            Your browser does not support the audio element.
+          </audio>
+        `}
         
         <div class="audio-controls">
           <button class="btn btn-secondary" id="playFromStartBtn">
             ⏮️ Play from Start
           </button>
           <button class="btn btn-secondary" id="downloadAudioBtn">
-            💾 Download Audio
+            💾 ${audioResult.isBrowserTTS ? 'Download Transcript' : 'Download Audio'}
           </button>
         </div>
         
@@ -910,6 +1296,198 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
   }
 
   initializeAudioPlayer(audioResult) {
+    if (audioResult.isBrowserTTS) {
+      // Use simple browser TTS controls
+      this.initializeSimpleBrowserTTS(audioResult);
+    } else {
+      // Use regular audio player for real audio files
+      this.initializeRegularAudioPlayer(audioResult);
+    }
+  }
+
+  initializeSimpleBrowserTTS(audioResult) {
+    console.log('Initializing Browser TTS controls with play/pause/stop');
+    
+    const speakBtn = document.getElementById('speakBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const speechStatus = document.getElementById('speechStatus');
+    const downloadAudioBtn = document.getElementById('downloadAudioBtn');
+    
+    let currentUtterance = null;
+    
+    // Helper function to update UI state
+    const updateControls = (state) => {
+      const hideAll = () => {
+        speakBtn.style.display = 'none';
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'none';
+        stopBtn.style.display = 'none';
+      };
+      
+      hideAll();
+      
+      switch (state) {
+        case 'ready':
+          speakBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Ready to play';
+          break;
+        case 'playing':
+          pauseBtn.style.display = 'inline-block';
+          stopBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Playing audio explanation...';
+          break;
+        case 'paused':
+          resumeBtn.style.display = 'inline-block';
+          stopBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Paused';
+          break;
+        case 'stopped':
+          speakBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Stopped - Click Play to restart';
+          break;
+        case 'error':
+          speakBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Error - Click to try again';
+          break;
+        default:
+          // Fallback to ready state for any unknown state
+          speakBtn.style.display = 'inline-block';
+          if (speechStatus) speechStatus.textContent = 'Ready to play';
+          break;
+      }
+    };
+    
+    // Play button
+    if (speakBtn) {
+      speakBtn.addEventListener('click', () => {
+        console.log('🔊 Play button clicked');
+        
+        // Cancel any existing speech
+        speechSynthesis.cancel();
+        
+        // Create utterance
+        currentUtterance = new SpeechSynthesisUtterance(audioResult.speechText || audioResult.transcript);
+        currentUtterance.rate = 0.9;
+        currentUtterance.pitch = 1.0;
+        currentUtterance.volume = 1.0;
+        currentUtterance.lang = 'en-US';
+        
+        // Use the pre-selected voice or find a good one
+        const preferredVoice = audioResult.selectedVoice || (() => {
+          const voices = speechSynthesis.getVoices();
+          return voices.find(voice => 
+            voice.lang.includes('en') && (
+              voice.name.toLowerCase().includes('karen') ||
+              voice.name.toLowerCase().includes('samantha') ||
+              voice.name.toLowerCase().includes('female')
+            )
+          ) || voices.find(voice => voice.lang.includes('en')) || voices[0];
+        })();
+        
+        if (preferredVoice) {
+          currentUtterance.voice = preferredVoice;
+          console.log('Selected voice:', preferredVoice.name);
+        }
+        
+        // Event handlers
+        currentUtterance.onstart = () => {
+          console.log('✅ Speech started');
+          updateControls('playing');
+        };
+        
+        currentUtterance.onend = () => {
+          console.log('✅ Speech completed');
+          // Only update to ready if we weren't manually stopped
+          if (currentUtterance) {
+            updateControls('ready');
+            currentUtterance = null;
+          }
+        };
+        
+        currentUtterance.onerror = (e) => {
+          console.error('❌ Speech failed:', e.error);
+          updateControls('error');
+          currentUtterance = null;
+        };
+        
+        currentUtterance.onpause = () => {
+          console.log('⏸️ Speech paused');
+          updateControls('paused');
+        };
+        
+        currentUtterance.onresume = () => {
+          console.log('▶️ Speech resumed');
+          updateControls('playing');
+        };
+        
+        // Start speech
+        speechSynthesis.speak(currentUtterance);
+        console.log('Speech synthesis started');
+      });
+    }
+    
+    // Pause button
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', () => {
+        console.log('⏸️ Pause button clicked');
+        if (speechSynthesis.speaking && !speechSynthesis.paused) {
+          speechSynthesis.pause();
+        }
+      });
+    }
+    
+    // Resume button
+    if (resumeBtn) {
+      resumeBtn.addEventListener('click', () => {
+        console.log('▶️ Resume button clicked');
+        if (speechSynthesis.paused) {
+          speechSynthesis.resume();
+        }
+      });
+    }
+    
+    // Stop button
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => {
+        console.log('⏹️ Stop button clicked');
+        currentUtterance = null; // Clear this first to prevent onend from overriding our state
+        speechSynthesis.cancel();
+        updateControls('stopped');
+      });
+    }
+    
+    // Initialize UI
+    updateControls('ready');
+    
+    // Download transcript for Browser TTS
+    if (downloadAudioBtn) {
+      downloadAudioBtn.addEventListener('click', () => {
+        console.log('📥 Download transcript for Browser TTS');
+        const transcript = audioResult.transcript || 'Audio explanation transcript';
+        const blob = new Blob([transcript], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'math-explanation-transcript.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('✅ Transcript downloaded');
+      });
+    }
+  }
+
+  // This method is no longer used - keeping for compatibility
+  initializeBrowserTTSControls(audioResult) {
+    console.log('Browser TTS is deprecated - using simple TTS instead');
+    this.initializeSimpleBrowserTTS(audioResult);
+  }
+
+
+  initializeRegularAudioPlayer(audioResult) {
     const audio = document.getElementById('audioPlayer');
     const playFromStartBtn = document.getElementById('playFromStartBtn');
     const downloadAudioBtn = document.getElementById('downloadAudioBtn');
@@ -917,25 +1495,33 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
     if (!audio) return;
 
     // Play from start functionality
-    playFromStartBtn.addEventListener('click', () => {
-      audio.currentTime = 0;
-      audio.play();
-    });
+    if (playFromStartBtn) {
+      playFromStartBtn.addEventListener('click', () => {
+        audio.currentTime = 0;
+        audio.play();
+      });
+    }
 
     // Download audio functionality
-    downloadAudioBtn.addEventListener('click', () => {
-      const a = document.createElement('a');
-      a.href = audioResult.audioUrl;
-      a.download = 'math-explanation.mp3';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
+    if (downloadAudioBtn) {
+      downloadAudioBtn.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = audioResult.audioUrl;
+        const filename = audioResult.audioModel.includes('Google') ? 
+          'math-explanation-google.mp3' : 'math-explanation-openai.mp3';
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    }
 
-    // Auto-play the audio
-    audio.play().catch(e => {
-      console.log('Audio auto-play prevented:', e);
-    });
+    // Auto-play for real audio files (OpenAI TTS only)
+    if (audioResult.audioUrl) {
+      audio.play().catch(e => {
+        console.log('Audio auto-play prevented:', e);
+      });
+    }
   }
 
   showAudioGenerationError(errorMessage) {
@@ -952,6 +1538,7 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
       `;
     }
   }
+
 
   async copyToClipboard() {
     if (!this.currentProblem || !this.currentProblem.solution) return;
@@ -2339,6 +2926,59 @@ Explanation: ${solution.explanation}`;
     } else {
       console.log('⚠️ Message data not found for key:', messageKey);
     }
+  }
+
+  getModelDisplayName(modelUsed) {
+    // Map model names to display names with appropriate icons
+    const modelMap = {
+      // OpenAI Models
+      'GPT-4o': '🚀 GPT-4o',
+      'GPT-4V Vision': '👁️ GPT-4V Vision',
+      'GPT-4o-mini': '⚡ GPT-4o-mini',
+      'GPT-4': '📝 GPT-4',
+      'gpt-4o': '🚀 GPT-4o',
+      'gpt-4o-mini': '⚡ GPT-4o-mini',
+      'gpt-4-vision-preview': '👁️ GPT-4V Vision',
+      'gpt-4': '📝 GPT-4',
+      
+      // Google Gemini Models
+      'gemini-2.5-flash-preview-05-20': '🌟 Gemini 2.5 Flash',
+      'gemini-2.0-flash-exp': '⭐ Gemini 2.0 Flash',
+      'gemini-1.5-flash': '💎 Gemini 1.5 Flash',
+      'gemini-1.5-pro': '🧠 Gemini 1.5 Pro',
+      'gemini-1.0-pro': '🤖 Gemini 1.0 Pro',
+      'Gemini 2.5 Flash': '🌟 Gemini 2.5 Flash',
+      'Gemini 2.0 Flash': '⭐ Gemini 2.0 Flash',
+      'Gemini 1.5 Flash': '💎 Gemini 1.5 Flash',
+      'Gemini 1.5 Pro': '🧠 Gemini 1.5 Pro',
+      'Gemini 1.0 Pro': '🤖 Gemini 1.0 Pro',
+      
+      // Claude Models (future)
+      'claude-3-opus': '🧭 Claude 3 Opus',
+      'claude-3-sonnet': '📚 Claude 3 Sonnet',
+      'claude-3-haiku': '🎋 Claude 3 Haiku'
+    };
+    
+    // Return mapped name or fallback to the actual model name with a generic icon
+    return modelMap[modelUsed] || `🤖 ${modelUsed || 'AI Model'}`;
+  }
+
+  getAudioModelName(provider) {
+    // Return the audio model name based on provider - both now use Browser TTS
+    if (provider === 'google') {
+      return '🔊 Browser TTS'; // Using browser Speech Synthesis API
+    } else if (provider === 'openai') {
+      return '🔊 Browser TTS'; // Using browser Speech Synthesis API (no cost)
+    } else {
+      return '🔊 TTS';
+    }
+  }
+
+  formatDuration(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   checkForPopupMessages() {

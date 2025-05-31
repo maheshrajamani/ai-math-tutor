@@ -177,18 +177,48 @@
       <div class="form-group">
         <label for="provider">AI Provider</label>
         <select id="provider">
-          <option value="openai">OpenAI (GPT-4 Vision) - Recommended</option>
+          <option value="openai">OpenAI (GPT Models)</option>
+          <option value="google">Google (Gemini Models)</option>
           <option value="claude">Claude (Anthropic) - Coming Soon</option>
         </select>
         <div class="help-text">Choose your preferred AI provider for solving math problems</div>
       </div>
+
+      <div class="form-group" id="modelSelection">
+        <label for="model">AI Model</label>
+        <select id="model">
+          <option value="auto">Auto (Smart Selection)</option>
+        </select>
+        <div class="help-text" id="modelHelp">Model will be automatically selected based on your provider choice</div>
+      </div>
       
-      <div class="form-group">
-        <label for="apiKey">API Key</label>
-        <input type="password" id="apiKey" placeholder="Enter your API key">
+      <div class="form-group" id="openaiConfig" style="display: none;">
+        <label for="apiKey">OpenAI API Key</label>
+        <input type="password" id="apiKey" placeholder="Enter your OpenAI API key">
         <div class="help-text">
           Your API key is stored locally and never shared. 
           <a href="https://platform.openai.com/api-keys" target="_blank">Get OpenAI API key</a>
+        </div>
+      </div>
+
+      <div class="form-group" id="googleConfig" style="display: none;">
+        <div id="googleAuthSection">
+          <button type="button" class="btn btn-primary" id="googleSignIn">
+            <span style="margin-right: 8px;">🔐</span> Sign in with Google
+          </button>
+          <div class="help-text">
+            Sign in with your Google account to use Gemini models.
+            <br>No API key required - just authenticate with Google.
+          </div>
+        </div>
+        <div id="googleAuthStatus" style="display: none;">
+          <div class="api-status">
+            <div class="status-indicator status-connected"></div>
+            <span id="googleUserEmail">Connected as: user@example.com</span>
+          </div>
+          <button type="button" class="btn btn-secondary" id="googleSignOut" style="margin-top: 10px;">
+            Sign Out
+          </button>
         </div>
       </div>
       
@@ -197,31 +227,31 @@
         <span id="statusText">Not connected</span>
       </div>
       
-      <div class="provider-info">
+      <div class="provider-info" id="providerInfo">
         <strong>OpenAI Pricing:</strong> ~$0.01-0.03 per math problem solved (depending on complexity)
         <br><strong>Features:</strong> Excellent at solving algebra, calculus, geometry with image support
       </div>
     </div>
     
     <div class="section">
-      <h3>🎥 Video Explanation Settings</h3>
+      <h3>🔊 Audio Settings</h3>
       
       <div class="form-group">
-        <label for="videoEnabled">Enable Video Explanations</label>
-        <select id="videoEnabled">
-          <option value="true">Enabled (Beta)</option>
-          <option value="false">Disabled</option>
+        <label for="voiceSpeed">Audio Explanation Speed</label>
+        <select id="voiceSpeed">
+          <option value="0.8">Slow (0.8x)</option>
+          <option value="1.0">Normal (1.0x)</option>
+          <option value="1.2">Fast (1.2x)</option>
         </select>
-        <div class="help-text">Generate animated videos with audio explanations (experimental feature)</div>
+        <div class="help-text">Adjust playback speed for audio explanations. Uses high-quality Browser TTS for all providers.</div>
       </div>
       
       <div class="form-group">
-        <label for="voiceSpeed">Explanation Voice Speed</label>
-        <select id="voiceSpeed">
-          <option value="0.8">Slow</option>
-          <option value="1.0" selected>Normal</option>
-          <option value="1.2">Fast</option>
+        <label for="transcriptModel">Audio Script Generation Model</label>
+        <select id="transcriptModel">
+          <option value="auto">Auto (Based on Main Provider)</option>
         </select>
+        <div class="help-text" id="transcriptModelHelp">Choose specific model for generating audio explanation scripts.</div>
       </div>
     </div>
     
@@ -249,9 +279,9 @@
     </div>
     
     <div style="text-align: center; margin-top: 30px;">
-      <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
-      <button class="btn btn-secondary" onclick="testConnection()">🔍 Test API Connection</button>
-      <button class="btn btn-secondary" onclick="resetSettings()">🔄 Reset to Defaults</button>
+      <button class="btn btn-primary" id="saveSettingsBtn">💾 Save Settings</button>
+      <button class="btn btn-secondary" id="testConnectionBtn">🔍 Test API Connection</button>
+      <button class="btn btn-secondary" id="resetSettingsBtn">🔄 Reset to Defaults</button>
     </div>
   </div>
   
