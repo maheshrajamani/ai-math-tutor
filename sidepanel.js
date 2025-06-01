@@ -83,6 +83,23 @@ class MathTutorSidePanel {
       });
     }
 
+    // Upload File button
+    const uploadFileBtn = document.getElementById('uploadFileBtn');
+    const fileInput = document.getElementById('fileInput');
+    
+    if (uploadFileBtn && fileInput) {
+      uploadFileBtn.addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          await this.handleFileUpload(file);
+        }
+      });
+    }
+
   }
 
   setupRefreshButton() {
@@ -257,6 +274,10 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
             oldText: this.currentProblem?.selectedText,
             newText: result.currentProblem.selectedText
           });
+          
+          // Clear chat for new problem
+          this.clearChatForNewProblem();
+          
           this.currentProblem = result.currentProblem;
           this.displayProblem();
           
@@ -3096,6 +3117,29 @@ Explanation: ${solution.explanation}`;
     document.getElementById('chatMessages').innerHTML = '';
   }
 
+  clearChatForNewProblem() {
+    console.log('Clearing chat for new problem');
+    
+    // Reset the chat session
+    this.resetChatSession();
+    
+    // Update the chat counter display
+    const chatCounter = document.getElementById('chatCounter');
+    if (chatCounter) {
+      chatCounter.textContent = `Questions remaining: ${this.chatSession.maxQuestions}`;
+    }
+    
+    // If chat window is open, close it or refresh it
+    const chatWindow = document.getElementById('chatWindow');
+    if (chatWindow && chatWindow.style.display !== 'none') {
+      // Chat is open, so just clear the messages area
+      const chatMessages = document.getElementById('chatMessages');
+      if (chatMessages) {
+        chatMessages.innerHTML = '';
+      }
+    }
+  }
+
   getCurrentProblemId() {
     // Create a unique identifier for the current problem based on its content
     const problemText = this.currentProblem.selectedText || this.currentProblem.problem || '';
@@ -3392,6 +3436,50 @@ Please provide a helpful, educational response that helps the student understand
   autoResizeChatInput(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+  }
+
+  async handleFileUpload(file) {
+    try {
+      this.showStatus(`📁 Processing ${file.name}...`, 'info');
+      
+      // Create a temporary URL for the file
+      const fileUrl = URL.createObjectURL(file);
+      
+      // Open file in a new tab for capture
+      const newTab = await chrome.tabs.create({ 
+        url: fileUrl,
+        active: true
+      });
+      
+      // Wait a moment for the file to load
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Switch back to side panel and start capture process
+      this.showStatus(`✅ ${file.name} opened! You can now capture problems from the file.`, 'success');
+      
+      // Automatically switch to capture mode for the file tab
+      setTimeout(async () => {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: newTab.id },
+            files: ['content.js']
+          });
+          
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          await chrome.tabs.sendMessage(newTab.id, { type: 'ENABLE_SELECTION' });
+          this.showStatus('📐 Capture mode enabled! Click and drag to select a problem.', 'success');
+          
+        } catch (error) {
+          console.log('Direct selection failed, using screen capture:', error);
+          this.initAutomaticScreenshot(newTab.id);
+        }
+      }, 500);
+      
+    } catch (error) {
+      console.error('Error handling file upload:', error);
+      this.showStatus('Error processing file. Please try again.', 'error');
+    }
   }
 }
 
