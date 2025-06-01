@@ -4,6 +4,12 @@ class MathTutorSidePanel {
     this.currentProblem = null;
     this.videoPlayer = null;
     this.videoService = null;
+    this.chatSession = {
+      messages: [],
+      questionCount: 0,
+      maxQuestions: 5,
+      context: null
+    };
     this.init();
   }
 
@@ -13,6 +19,7 @@ class MathTutorSidePanel {
     this.setupMainButtons();
     this.setupRefreshButton();
     this.setupActionButtons();
+    this.setupChatHandlers();
     this.initializeVideoService();
     this.loadCurrentProblem();
     
@@ -148,6 +155,9 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
         switch (action) {
           case 'explain':
             this.explainProblem();
+            break;
+          case 'discuss':
+            this.openChatWindow();
             break;
           case 'copy':
             this.copyToClipboard();
@@ -352,11 +362,14 @@ Memory timestamp: ${this.currentProblem?.timestamp || 'none'}`);
           </div>
         </div>
         
-        <div style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
-          <button class="btn btn-primary" data-action="explain" title="Generate Audio Explanation">
-            🔊 Audio Explanation
+        <div style="margin-top: 20px; display: flex; gap: 20px; align-items: center; justify-content: center;">
+          <button class="btn btn-primary solution-action-btn" data-action="explain" title="Audio Explanation" style="width: 48px; height: 48px; padding: 0; font-size: 20px; border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative;">
+            🔊
           </button>
-          <button class="btn btn-secondary" data-action="copy" style="padding: 8px 12px; font-size: 16px;" title="Copy">
+          <button class="btn btn-primary solution-action-btn" data-action="discuss" title="Chat" style="background: linear-gradient(135deg, #34a853, #137333); width: 48px; height: 48px; padding: 0; font-size: 20px; border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative;">
+            💬
+          </button>
+          <button class="btn btn-secondary solution-action-btn" data-action="copy" title="Copy" style="width: 48px; height: 48px; padding: 0; font-size: 20px; border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative;">
             📋
           </button>
         </div>
@@ -2993,6 +3006,392 @@ Explanation: ${solution.explanation}`;
       this.processPopupMessage(trigger);
       this.lastProcessedTrigger = trigger;
     }
+  }
+
+  // Chat functionality
+  setupChatHandlers() {
+    // Chat close button
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'chatClose' || e.target.id === 'chatOverlay') {
+        this.closeChatWindow();
+      }
+    });
+
+    // Chat send button
+    document.addEventListener('click', (e) => {
+      if (e.target.id === 'chatSend') {
+        this.sendChatMessage();
+      }
+    });
+
+    // Chat input Enter key
+    document.addEventListener('keydown', (e) => {
+      if (e.target.id === 'chatInput' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendChatMessage();
+      }
+    });
+
+    // Auto-resize chat input
+    document.addEventListener('input', (e) => {
+      if (e.target.id === 'chatInput') {
+        this.autoResizeChatInput(e.target);
+      }
+    });
+  }
+
+  openChatWindow() {
+    if (!this.currentProblem || !this.currentProblem.solution) {
+      alert('Please solve a problem first before discussing it.');
+      return;
+    }
+
+    // Get current problem identifier
+    const currentProblemId = this.getCurrentProblemId();
+    
+    // Reset chat session only if this is a different problem
+    if (this.chatSession.currentProblemId !== currentProblemId) {
+      this.resetChatSession();
+      this.chatSession.currentProblemId = currentProblemId;
+    }
+    
+    // Set up chat context
+    this.chatSession.context = {
+      problem: this.currentProblem.selectedText || this.currentProblem.problem || 'Math problem',
+      solution: this.currentProblem.solution.solution || 'Solution provided',
+      steps: this.currentProblem.solution.steps || [],
+      explanation: this.currentProblem.solution.explanation || ''
+    };
+
+    // Restore chat history if any, or initialize new chat
+    if (this.chatSession.messages.length === 0) {
+      // New chat session - add solution summary and welcome message
+      this.addSolutionSummary();
+      this.addChatMessage('bot', `Hi! I'm here to help you understand this math problem. What would you like to know?`);
+    } else {
+      // Existing chat - restore history (which includes solution summary)
+      this.restoreChatHistory();
+    }
+
+    // Update chat window header with model info
+    this.updateChatHeader();
+
+    // Show chat window
+    document.getElementById('chatOverlay').style.display = 'block';
+    document.getElementById('chatWindow').style.display = 'flex';
+    document.getElementById('chatInput').focus();
+    
+    this.updateChatCounter();
+  }
+
+  closeChatWindow() {
+    document.getElementById('chatOverlay').style.display = 'none';
+    document.getElementById('chatWindow').style.display = 'none';
+  }
+
+  resetChatSession() {
+    this.chatSession.messages = [];
+    this.chatSession.questionCount = 0;
+    this.chatSession.currentProblemId = null;
+    document.getElementById('chatMessages').innerHTML = '';
+  }
+
+  getCurrentProblemId() {
+    // Create a unique identifier for the current problem based on its content
+    const problemText = this.currentProblem.selectedText || this.currentProblem.problem || '';
+    const solutionText = this.currentProblem.solution?.solution || '';
+    return btoa(problemText + solutionText).substring(0, 20); // Base64 encode and truncate
+  }
+
+  restoreChatHistory() {
+    // Clear the chat display first
+    document.getElementById('chatMessages').innerHTML = '';
+    
+    // Always show solution summary first
+    this.addSolutionSummary();
+    
+    // Re-display all messages from session
+    this.chatSession.messages.forEach(msg => {
+      this.displayChatMessage(msg.sender, msg.message);
+    });
+    
+    // Update input state based on question count
+    const input = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('chatSend');
+    
+    if (this.chatSession.questionCount >= this.chatSession.maxQuestions) {
+      input.disabled = true;
+      sendBtn.disabled = true;
+    } else {
+      input.disabled = false;
+      sendBtn.disabled = false;
+    }
+  }
+
+  displayChatMessage(sender, message) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${sender}`;
+    
+    const avatar = document.createElement('div');
+    avatar.className = `chat-avatar ${sender}`;
+    avatar.textContent = sender === 'user' ? 'U' : 'AI';
+    
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble ${sender}`;
+    bubble.textContent = message;
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(bubble);
+    messagesContainer.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  addSolutionSummary() {
+    const messagesContainer = document.getElementById('chatMessages');
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'solution-summary';
+    
+    const solution = this.currentProblem.solution;
+    const problem = this.currentProblem.selectedText || this.currentProblem.problem || 'Math problem';
+    
+    summaryDiv.innerHTML = `
+      <div style="background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+        <div style="font-weight: 600; color: #1976d2; margin-bottom: 12px; font-size: 14px;">📝 Problem & Solution</div>
+        
+        <div style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-weight: 500; color: #333; margin-bottom: 8px; font-size: 13px;">Problem:</div>
+          <div style="color: #666; font-size: 13px; line-height: 1.4;">${problem}</div>
+        </div>
+        
+        <div style="background: #e8f5e8; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-weight: 600; color: #137333; margin-bottom: 8px; font-size: 13px;">✅ Answer:</div>
+          <div style="color: #137333; font-weight: 500; font-size: 14px;">${solution.solution}</div>
+        </div>
+        
+        ${solution.steps && solution.steps.length > 0 ? `
+          <div style="background: white; border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 500; color: #333; margin-bottom: 10px; font-size: 13px;">🔢 Steps:</div>
+            ${solution.steps.map((step, index) => `
+              <div style="margin-bottom: 6px; display: flex; align-items: flex-start; gap: 8px;">
+                <span style="background: #4285f4; color: white; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 1px;">${index + 1}</span>
+                <span style="color: #666; font-size: 13px; line-height: 1.4;">${step}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+    
+    messagesContainer.appendChild(summaryDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  addChatMessage(sender, message) {
+    // Display the message
+    this.displayChatMessage(sender, message);
+    
+    // Store in session
+    this.chatSession.messages.push({ sender, message, timestamp: Date.now() });
+  }
+
+  async sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('chatSend');
+    const message = input.value.trim();
+    
+    if (!message || this.chatSession.questionCount >= this.chatSession.maxQuestions) {
+      return;
+    }
+
+    // Add user message
+    this.addChatMessage('user', message);
+    this.chatSession.questionCount++;
+    
+    // Clear input and disable send button
+    input.value = '';
+    sendBtn.disabled = true;
+    this.autoResizeChatInput(input);
+    
+    // Show typing indicator
+    this.showTypingIndicator();
+    
+    try {
+      // Get AI response
+      const response = await this.getChatResponse(message);
+      
+      // Remove typing indicator and add response
+      this.hideTypingIndicator();
+      this.addChatMessage('bot', response);
+      
+    } catch (error) {
+      console.error('Chat error:', error);
+      this.hideTypingIndicator();
+      this.addChatMessage('bot', 'Sorry, I encountered an error. Please try again.');
+    }
+    
+    // Re-enable send button
+    sendBtn.disabled = false;
+    this.updateChatCounter();
+    
+    // Check if max questions reached
+    if (this.chatSession.questionCount >= this.chatSession.maxQuestions) {
+      setTimeout(() => {
+        this.addChatMessage('bot', 'You\'ve reached the maximum number of questions for this session. Feel free to start a new problem to discuss more!');
+        document.getElementById('chatInput').disabled = true;
+        document.getElementById('chatSend').disabled = true;
+      }, 1000);
+    }
+  }
+
+  async getChatResponse(userMessage) {
+    // Create chat prompt with problem context
+    const contextPrompt = `You are helping a student understand a math problem. Here's the context:
+
+Problem: ${this.chatSession.context.problem}
+
+Solution: ${this.chatSession.context.solution}
+
+Steps: ${this.chatSession.context.steps.join('; ')}
+
+Explanation: ${this.chatSession.context.explanation}
+
+Previous conversation:
+${this.chatSession.messages.slice(-4).map(m => `${m.sender}: ${m.message}`).join('\n')}
+
+Student's question: ${userMessage}
+
+Please provide a helpful, educational response that helps the student understand the problem better. Keep your response concise (2-3 sentences) and focused on the student's specific question.`;
+
+    // Get AI service settings
+    const result = await chrome.storage.local.get([
+      'aiProvider', 'aiApiKey', 'geminiApiKey', 'googleAuthToken'
+    ]);
+    
+    const provider = result.aiProvider || 'openai';
+    
+    // Use the same AI service as the main problem solving
+    if (provider === 'openai') {
+      return await this.getChatResponseOpenAI(contextPrompt, result.aiApiKey);
+    } else if (provider === 'google') {
+      return await this.getChatResponseGemini(contextPrompt, result.geminiApiKey, result.googleAuthToken);
+    } else {
+      throw new Error('Unsupported AI provider for chat');
+    }
+  }
+
+  async getChatResponseOpenAI(prompt, apiKey) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful math tutor. Provide clear, concise explanations that help students understand math concepts.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 300,
+        temperature: 0.7
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content.trim();
+  }
+
+  async getChatResponseGemini(prompt, apiKey, authToken) {
+    const model = 'gemini-1.5-flash';
+    let url;
+    let headers = { 'Content-Type': 'application/json' };
+    
+    if (apiKey) {
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    } else if (authToken) {
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      headers['Authorization'] = `Bearer ${authToken}`;
+    } else {
+      throw new Error('No valid authentication for Gemini');
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 300
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text.trim();
+  }
+
+  showTypingIndicator() {
+    const messagesContainer = document.getElementById('chatMessages');
+    const typingDiv = document.createElement('div');
+    typingDiv.id = 'typingIndicator';
+    typingDiv.className = 'chat-message bot';
+    
+    typingDiv.innerHTML = `
+      <div class="chat-avatar bot">AI</div>
+      <div class="typing-indicator">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    `;
+    
+    messagesContainer.appendChild(typingDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typingIndicator');
+    if (typingIndicator) {
+      typingIndicator.remove();
+    }
+  }
+
+  updateChatCounter() {
+    const remaining = this.chatSession.maxQuestions - this.chatSession.questionCount;
+    document.getElementById('chatCounter').textContent = `Questions remaining: ${remaining}`;
+  }
+
+  updateChatHeader() {
+    const chatTitle = document.getElementById('chatTitle') || document.querySelector('.chat-title');
+    if (chatTitle) {
+      const modelUsed = this.currentProblem.solution?.modelUsed || 'AI Model';
+      chatTitle.innerHTML = `💬 Discuss Problem <span style="font-size: 12px; font-weight: 400; opacity: 0.8; margin-left: 8px;">${modelUsed}</span>`;
+    }
+  }
+
+  autoResizeChatInput(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   }
 }
 

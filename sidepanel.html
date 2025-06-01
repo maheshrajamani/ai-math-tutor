@@ -449,6 +449,245 @@
       position: relative;
     }
     
+    .chat-window {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      z-index: 10000;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .chat-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 9999;
+      display: none;
+    }
+    
+    .chat-header {
+      background: linear-gradient(135deg, #4285f4, #34a853);
+      color: white;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .chat-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+    }
+    
+    .chat-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    .chat-close:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: #f8f9fa;
+    }
+    
+    .chat-message {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    
+    .chat-message.user {
+      flex-direction: row-reverse;
+    }
+    
+    .chat-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    
+    .chat-avatar.user {
+      background: #4285f4;
+      color: white;
+    }
+    
+    .chat-avatar.bot {
+      background: #34a853;
+      color: white;
+    }
+    
+    .chat-bubble {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      word-wrap: break-word;
+    }
+    
+    .chat-bubble.user {
+      background: #4285f4;
+      color: white;
+      margin-left: auto;
+    }
+    
+    .chat-bubble.bot {
+      background: white;
+      color: #333;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .chat-input-container {
+      padding: 20px;
+      background: white;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    
+    .chat-input {
+      flex: 1;
+      min-height: 44px;
+      max-height: 120px;
+      padding: 12px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 22px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .chat-input:focus {
+      border-color: #4285f4;
+    }
+    
+    .chat-send {
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 50%;
+      background: #4285f4;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    
+    .chat-send:hover:not(:disabled) {
+      background: #1a73e8;
+    }
+    
+    .chat-send:disabled {
+      background: #e0e0e0;
+      cursor: not-allowed;
+    }
+    
+    .chat-counter {
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+      padding: 8px;
+      background: #f8f9fa;
+      border-top: 1px solid #e0e0e0;
+    }
+    
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 16px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .typing-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #999;
+      animation: typing 1.4s infinite ease-in-out;
+    }
+    
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+    
+    @keyframes typing {
+      0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+    
+    /* Solution Action Button Tooltips */
+    .solution-action-btn::after {
+      content: attr(title);
+      position: absolute;
+      bottom: -35px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 1000;
+    }
+    
+    .solution-action-btn:hover::after {
+      opacity: 1;
+    }
+    
+    /* Ensure tooltips don't interfere with layout */
+    .solution-action-btn {
+      position: relative;
+    }
+    
     .action-btn:hover {
       transform: translateY(-2px) scale(1.05);
       box-shadow: 0 4px 8px rgba(66, 133, 244, 0.4);
@@ -679,7 +918,7 @@
   <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
     <h3 style="margin: 0 0 15px 0; color: #5f6368;">Choose an action:</h3>
     <div style="display: flex; gap: 12px; justify-content: center;">
-      <button id="selectProblemBtn" class="action-btn" title="Select Math Problem from current page">
+      <button id="selectProblemBtn" class="action-btn" title="Solve">
         📐
       </button>
       <button id="settingsBtn" class="action-btn settings-btn" title="Settings">
@@ -697,7 +936,26 @@
     </div>
   </div>
   
+  <!-- Chat Window Overlay -->
+  <div id="chatOverlay" class="chat-overlay"></div>
   
+  <!-- Chat Window -->
+  <div id="chatWindow" class="chat-window">
+    <div class="chat-header">
+      <h3 id="chatTitle" class="chat-title">💬 Discuss Problem</h3>
+      <button id="chatClose" class="chat-close">×</button>
+    </div>
+    <div id="chatMessages" class="chat-messages">
+      <!-- Messages will be added here dynamically -->
+    </div>
+    <div class="chat-counter">
+      <span id="chatCounter">Questions remaining: 5</span>
+    </div>
+    <div class="chat-input-container">
+      <textarea id="chatInput" class="chat-input" placeholder="Ask a question about this problem..." rows="1"></textarea>
+      <button id="chatSend" class="chat-send">→</button>
+    </div>
+  </div>
   
   <script src="config.js"></script>
   <script src="video-service.js"></script>
