@@ -2762,68 +2762,34 @@ Explanation: ${solution.explanation}`;
     try {
       this.showStatus('📱 Opening screen capture...', 'info');
       
-      // Show instructions for screen capture
-      const content = document.getElementById('content');
-      content.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📱</div>
-          <h2>Smart Capture Mode</h2>
-          <p style="margin-bottom: 20px;">For PDFs, Google Docs, and other restricted content, screen capture provides reliable access:</p>
-          
-          <button 
-            id="screenCaptureBtn" 
-            class="btn btn-primary" 
-            style="padding: 15px 30px; font-size: 16px;"
-          >
-            🖥️ Capture Screen
-          </button>
-          
-          <div style="margin-top: 20px; padding: 15px; background: #e8f0fe; border-radius: 8px; color: #1976d2;">
-            <strong>📋 Instructions:</strong><br>
-            1. Click "Capture Screen"<br>
-            2. Select the browser tab with your content<br>
-            3. You'll get a large selection window to choose the problem area
-          </div>
-        </div>
-      `;
-      
-      // Add event listener for screen capture
-      document.getElementById('screenCaptureBtn').addEventListener('click', async () => {
-        try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: { mediaSource: 'screen' }
-          });
-          
-          // Create video element to capture frame
-          const video = document.createElement('video');
-          video.srcObject = stream;
-          video.play();
-          
-          video.onloadedmetadata = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0);
-            
-            // Stop the stream
-            stream.getTracks().forEach(track => track.stop());
-            
-            // Get the captured image
-            const capturedImage = canvas.toDataURL('image/png');
-            
-            // Show screenshot selection interface
-            this.showPDFScreenshotSelection(capturedImage);
-            this.showStatus('✅ Screen captured! Click and drag to select the math problem area.', 'success');
-          };
-          
-        } catch (captureError) {
-          console.error('Screen capture failed:', captureError);
-          this.showStatus('Screen capture cancelled or failed.', 'error');
-          throw captureError;
-        }
+      // Directly trigger screen capture without showing intermediate screen
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: 'screen' }
       });
+      
+      // Create video element to capture frame
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+      
+      video.onloadedmetadata = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        
+        // Stop the stream
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Get the captured image
+        const capturedImage = canvas.toDataURL('image/png');
+        
+        // Show screenshot selection interface
+        this.showPDFScreenshotSelection(capturedImage);
+        this.showStatus('✅ Screen captured! Click and drag to select the math problem area.', 'success');
+      };
       
     } catch (error) {
       console.error('Screen Capture API failed:', error);
